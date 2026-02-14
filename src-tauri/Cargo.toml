@@ -1,0 +1,20 @@
+[package]
+name = "mac-screenshot"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal Mac screenshot tool with region selection"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "image-png", "macos-private-api"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+image = "0.25"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24"
+arboard = "3"
