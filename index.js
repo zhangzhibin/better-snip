@@ -6,6 +6,7 @@ const mainView = document.getElementById('main-view');
 const captureView = document.getElementById('capture-view');
 const overlay = document.getElementById('overlay');
 const box = document.getElementById('box');
+const selectionInfo = document.getElementById('selection-info');
 const hint = document.getElementById('hint');
 const errorEl = document.getElementById('error-msg');
 
@@ -35,6 +36,17 @@ function updateBox() {
   box.style.height = h + 'px';
   box.style.display = w > 0 && h > 0 ? 'block' : 'none';
   overlay.classList.toggle('has-selection', w > 0 && h > 0);
+  // 锚点与尺寸显示在选区内（左上角内嵌 8px，避免被菜单栏挡住）
+  if (selectionInfo) {
+    if (w > 0 && h > 0) {
+      selectionInfo.style.left = (x + 8) + 'px';
+      selectionInfo.style.top = (y + 8) + 'px';
+      selectionInfo.textContent = `锚点 (${Math.round(startX)}, ${Math.round(startY)})  ·  尺寸 ${w} × ${h}`;
+      selectionInfo.classList.add('visible');
+    } else {
+      selectionInfo.classList.remove('visible');
+    }
+  }
 }
 
 function onMove(e) {
@@ -61,12 +73,19 @@ function finish(cancel) {
   logToFile('finish(cancel=' + cancel + ') w=' + w + ' h=' + h);
   if (!cancel && w >= 2 && h >= 2) {
     const payload = { region: { x, y, width: w, height: h } };
-    logToFile('invoking capture_region');
-    invoke('capture_region', payload).catch((err) => {
-      const msg = err?.message ?? err?.toString?.() ?? String(err);
-      logToFile('capture_region error: ' + msg);
-      showError('Capture failed: ' + msg);
-    });
+    // 先隐藏蒙版和选区框，避免被截入图；延迟一帧再截屏，确保合成器已更新
+    if (overlay) overlay.style.display = 'none';
+    if (box) box.style.display = 'none';
+    if (hint) hint.style.visibility = 'hidden';
+    const doCapture = () => {
+      logToFile('invoking capture_region');
+      invoke('capture_region', payload).catch((err) => {
+        const msg = err?.message ?? err?.toString?.() ?? String(err);
+        logToFile('capture_region error: ' + msg);
+        showError('Capture failed: ' + msg);
+      });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(doCapture, 50)));
   } else {
     logToFile('invoking close_capture_window');
     invoke('close_capture_window').catch((err) => {
@@ -79,7 +98,13 @@ function enterCaptureMode() {
   mainView.style.display = 'none';
   captureView.classList.add('active');
   document.body.style.background = 'transparent';
-  initCapture();
+  // 每次进入选区时恢复蒙版/框/提示，避免上次截屏时隐藏后残留
+  if (overlay) overlay.style.display = '';
+  if (box) box.style.display = '';
+  if (hint) hint.style.visibility = '';
+  if (selectionInfo) { selectionInfo.classList.remove('visible'); selectionInfo.textContent = ''; }
+  // 等窗口完成 resize 后再启用选区，否则后续截图时 clientX/clientY 仍按旧窗口尺寸，导致选区错位
+  setTimeout(initCapture, 150);
 }
 
 function exitCaptureMode() {
@@ -148,10 +173,23 @@ function waitForTauri(maxMs = 3000) {
 window.__enterCaptureMode = enterCaptureMode;
 window.__exitCaptureMode = exitCaptureMode;
 
+async function doFullScreen() {
+  try {
+    await invoke('capture_fullscreen');
+    logToFile('capture_fullscreen ok');
+  } catch (e) {
+    const msg = e?.message ?? e?.toString?.() ?? String(e);
+    logToFile('capture_fullscreen error: ' + msg);
+    showError('Full screen capture failed: ' + msg);
+  }
+}
+
 waitForTauri()
   .then(() => {
     listen('enter-capture-mode', enterCaptureMode);
     listen('exit-capture-mode', exitCaptureMode);
+    const btn = document.getElementById('btn-fullscreen');
+    if (btn) btn.addEventListener('click', doFullScreen);
   })
   .catch(() => {
     if (errorEl) {

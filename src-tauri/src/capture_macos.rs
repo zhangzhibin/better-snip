@@ -18,6 +18,19 @@ pub struct CaptureRect {
 }
 
 #[cfg(target_os = "macos")]
+/// 主显示器完整区域（points），用于全屏截图。
+pub fn main_display_rect() -> CaptureRect {
+    let display = CGDisplay::main();
+    let bounds = display.bounds();
+    CaptureRect {
+        x: bounds.origin.x,
+        y: bounds.origin.y,
+        width: bounds.size.width,
+        height: bounds.size.height,
+    }
+}
+
+#[cfg(target_os = "macos")]
 /// 截取主显示器指定区域（坐标系：左上角为原点，单位 points），返回 PNG 字节。
 pub fn capture_region_png(rect: CaptureRect) -> Result<Vec<u8>, String> {
     let display = CGDisplay::main();
@@ -81,6 +94,11 @@ fn cgimage_to_png(cg_image: &CGImage) -> Result<Vec<u8>, String> {
         )
         .map_err(|e: image::ImageError| e.to_string())?;
     Ok(out)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn main_display_rect() -> CaptureRect {
+    CaptureRect { x: 0., y: 0., width: 0., height: 0. }
 }
 
 #[cfg(not(target_os = "macos"))]

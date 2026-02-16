@@ -4,7 +4,7 @@
 
 mod capture_macos;
 
-use capture_macos::{capture_region_png, CaptureRect};
+use capture_macos::{capture_region_png, main_display_rect, CaptureRect};
 use serde::Deserialize;
 use std::io::Write;
 use std::sync::Mutex;
@@ -121,6 +121,38 @@ fn close_capture_window(app: tauri::AppHandle, state: State<'_, Mutex<Option<Mai
     exit_capture_mode(&app, &state);
 }
 
+/// 全屏截图：主显示器整屏截取 → 剪贴板，可选保存。用于验证截屏链路是否正常。
+#[tauri::command]
+async fn capture_fullscreen(save_to_file: Option<String>) -> Result<(), String> {
+    let rect = main_display_rect();
+    debug_log(&format!("capture_fullscreen rect {:?}", rect));
+    let png_bytes = capture_region_png(rect).map_err(|e| {
+        let msg = format!("capture_fullscreen error: {}", e);
+        debug_log(&msg);
+        e
+    })?;
+    #[cfg(target_os = "macos")]
+    {
+        let img = image::load_from_memory(&png_bytes).map_err(|e| e.to_string())?;
+        let rgba = img.to_rgba8();
+        let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+        clipboard
+            .set_image(arboard::ImageData {
+                width: rgba.width() as usize,
+                height: rgba.height() as usize,
+                bytes: rgba.into_raw().into(),
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(path) = save_to_file {
+        if !path.is_empty() {
+            let _ = tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, &png_bytes)).await;
+        }
+    }
+    debug_log("capture_fullscreen ok");
+    Ok(())
+}
+
 /// 退出选区模式：eval 切回主视图并恢复背景，再发事件兜底，最后恢复窗口尺寸
 fn exit_capture_mode(app: &tauri::AppHandle, state: &State<'_, Mutex<Option<MainWindowSavedState>>>) {
     if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -229,6 +261,7 @@ pub fn run() {
         .manage(Mutex::new(None::<MainWindowSavedState>))
         .invoke_handler(tauri::generate_handler![
             capture_region,
+            capture_fullscreen,
             close_capture_window,
             get_debug_log_path,
             log_from_frontend,
@@ -267,6 +300,7 @@ pub fn run() {
             }
             // macOS 要求应用菜单顶层为 Submenu
             let sub = SubmenuBuilder::new(app, "Screenshot")
+                .text("capture_full", "Capture Full Screen")
                 .text("capture", "Capture Region")
                 .text("quit", "Quit")
                 .build()?;
@@ -275,7 +309,14 @@ pub fn run() {
 
             app.on_menu_event(move |app_handle, event| {
                 let id = event.id().as_ref();
-                if id == "capture" {
+                if id == "capture_full" {
+                    let _app = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = capture_fullscreen(None).await {
+                            eprintln!("capture_fullscreen: {}", e);
+                        }
+                    });
+                } else if id == "capture" {
                     if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
                         if let Err(e) = open_capture_window(app_handle, &state) {
                             eprintln!("open_capture_window: {}", e);
@@ -287,9 +328,10 @@ pub fn run() {
             });
 
             // 菜单栏右侧 Tray 图标（macOS 上显示在顶部菜单栏右侧），方便快速区域截图
+            let tray_full = MenuItemBuilder::with_id("tray_full", "Capture Full Screen").build(app)?;
             let tray_capture = MenuItemBuilder::with_id("tray_capture", "Capture Region").build(app)?;
             let tray_quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
-            let tray_menu = MenuBuilder::new(app).items(&[&tray_capture, &tray_quit]).build()?;
+            let tray_menu = MenuBuilder::new(app).items(&[&tray_full, &tray_capture, &tray_quit]).build()?;
             let tray_icon = app.default_window_icon().cloned();
             #[cfg(target_os = "macos")]
             let tray_icon = tray_icon.or_else(|| {
@@ -307,9 +349,17 @@ pub fn run() {
             if let Some(ref icon) = tray_icon {
                 tray_builder = tray_builder.icon(icon.clone());
             }
-            let tray = tray_builder
+            let _tray = tray_builder
                 .on_menu_event(move |app_handle, event| {
                     match event.id().as_ref() {
+                        "tray_full" => {
+                            let _app = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = capture_fullscreen(None).await {
+                                    eprintln!("tray capture_fullscreen: {}", e);
+                                }
+                            });
+                        }
                         "tray_capture" => {
                             if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
                                 if let Err(e) = open_capture_window(app_handle, &state) {
