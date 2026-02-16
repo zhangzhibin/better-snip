@@ -8,7 +8,7 @@ description = "Minimal Mac screenshot tool with region selection"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "image-png", "macos-private-api"] }
+tauri = { version = "2", features = ["protocol-asset", "image-png", "macos-private-api", "tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-fs = "2"

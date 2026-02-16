@@ -8,7 +8,8 @@ use capture_macos::{capture_region_png, CaptureRect};
 use serde::Deserialize;
 use std::io::Write;
 use std::sync::Mutex;
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
@@ -65,12 +66,16 @@ async fn capture_region(
     let msg = format!("capture_region called x={} y={} w={} h={}", region.x, region.y, region.width, region.height);
     debug_log(&msg);
     eprintln!("[capture_region] {}", msg);
+
+    // 前端坐标即窗口坐标；全屏时窗口与主屏重合，直接使用（此前按“窗口左下角”换算导致首次也偏移，已撤销）
     let rect = CaptureRect {
         x: region.x,
         y: region.y,
         width: region.width,
         height: region.height,
     };
+    // 等待前端已隐藏蒙版并给合成器一帧时间，再截屏，避免截到蒙版/选区框或旧画面
+    let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(80))).await;
     let png_bytes = capture_region_png(rect).map_err(|e| {
         let err_msg = format!("capture_region_png error: {}", e);
         debug_log(&err_msg);
@@ -176,18 +181,16 @@ fn open_capture_window(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex<Op
     }
     w.set_decorations(false).map_err(|e| e.to_string())?;
     w.set_background_color(Some(Color(0, 0, 0, 0))).map_err(|e| e.to_string())?;
+    // 使用物理尺寸与位置，使窗口覆盖整个主屏，支持任意位置选区（不再用逻辑尺寸误传导致区域受限）
     if let Ok(Some(mon)) = app.primary_monitor() {
-        let scale = mon.scale_factor();
         let sz = mon.size();
         let p = mon.position();
-        let width = (sz.width as f64 / scale) as u32;
-        let height = (sz.height as f64 / scale) as u32;
-        let x = (p.x as f64 / scale) as i32;
-        let y = (p.y as f64 / scale) as i32;
-        let _ = w.set_size(tauri::PhysicalSize::new(width, height));
-        let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+        let _ = w.set_size(tauri::PhysicalSize::new(sz.width, sz.height));
+        let _ = w.set_position(tauri::PhysicalPosition::new(p.x, p.y));
     }
-    // 用 eval 直接切视图并设透明背景，不依赖事件时序；再发事件兜底
+    // 延迟再切视图，确保窗口已完成 resize，否则后续截图时前端坐标仍按旧尺寸导致选区错位
+    let app_clone = app.clone();
+    let label = MAIN_WINDOW_LABEL.to_string();
     let js = r#"
       (function(){
         var m=document.getElementById('main-view');
@@ -197,10 +200,22 @@ fn open_capture_window(app: &tauri::AppHandle, state: &tauri::State<'_, Mutex<Op
         document.body.style.background='transparent';
         if(window.__enterCaptureMode){window.__enterCaptureMode();}
       })();
-    "#;
-    let _ = w.eval(js);
-    let _ = app.emit_to(tauri::EventTarget::WebviewWindow { label: MAIN_WINDOW_LABEL.to_string() }, "enter-capture-mode", ());
-    let _ = w.set_focus();
+    "#.to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let app_main = app_clone.clone();
+        let _ = app_clone.run_on_main_thread(move || {
+            if let Some(w) = app_main.get_webview_window(&label) {
+                let _ = w.eval(&js);
+                let _ = app_main.emit_to(
+                    tauri::EventTarget::WebviewWindow { label: label.clone() },
+                    "enter-capture-mode",
+                    (),
+                );
+                let _ = w.set_focus();
+            }
+        });
+    });
     debug_log("open_capture_window ok");
     Ok(())
 }
@@ -221,6 +236,35 @@ pub fn run() {
         .setup(|app| {
             debug_log("app setup: logging to file");
             eprintln!("[mac-screenshot] debug log: {}", debug_log_path().display());
+            // 显式设置主窗口图标（开发模式下 default_window_icon 可能因工作目录未解析到图标，需从可执行路径推算）
+            if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                let icon_loaded = app
+                    .default_window_icon()
+                    .and_then(|img| w.set_icon(img.clone()).ok())
+                    .is_some();
+                if !icon_loaded {
+                    #[cfg(target_os = "macos")]
+                    if let Ok(exe) = std::env::current_exe() {
+                        let icons_dir = exe
+                            .parent()
+                            .and_then(|p| p.parent())
+                            .and_then(|p| p.parent())
+                            .map(|p| p.join("icons"));
+                        if let Some(dir) = icons_dir {
+                            for name in ["128x128.png", "32x32.png", "icon.png"] {
+                                let path = dir.join(name);
+                                if path.exists() {
+                                    if let Ok(img) = tauri::image::Image::from_path(&path) {
+                                        let _ = w.set_icon(img);
+                                        debug_log(&format!("window icon set from {:?}", path));
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // macOS 要求应用菜单顶层为 Submenu
             let sub = SubmenuBuilder::new(app, "Screenshot")
                 .text("capture", "Capture Region")
@@ -241,6 +285,57 @@ pub fn run() {
                     app_handle.exit(0);
                 }
             });
+
+            // 菜单栏右侧 Tray 图标（macOS 上显示在顶部菜单栏右侧），方便快速区域截图
+            let tray_capture = MenuItemBuilder::with_id("tray_capture", "Capture Region").build(app)?;
+            let tray_quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
+            let tray_menu = MenuBuilder::new(app).items(&[&tray_capture, &tray_quit]).build()?;
+            let tray_icon = app.default_window_icon().cloned();
+            #[cfg(target_os = "macos")]
+            let tray_icon = tray_icon.or_else(|| {
+                std::env::current_exe().ok().and_then(|exe| {
+                    let icons_dir = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent()).map(|p| p.join("icons"));
+                    icons_dir.and_then(|dir| {
+                        ["32x32.png", "128x128.png", "icon.png"].iter().find_map(|name| {
+                            let path = dir.join(name);
+                            (path.exists()).then(|| tauri::image::Image::from_path(&path).ok()).flatten()
+                        })
+                    })
+                })
+            });
+            let mut tray_builder = TrayIconBuilder::new().menu(&tray_menu).tooltip("Mac Screenshot");
+            if let Some(ref icon) = tray_icon {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            let tray = tray_builder
+                .on_menu_event(move |app_handle, event| {
+                    match event.id().as_ref() {
+                        "tray_capture" => {
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                if let Err(e) = open_capture_window(app_handle, &state) {
+                                    eprintln!("tray open_capture_window: {}", e);
+                                }
+                            }
+                        }
+                        "tray_quit" => {
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray_icon, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        let app = tray_icon.app_handle();
+                        if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            // 不使用 template 模式，直接显示与 app 一致的彩色图标（蓝底白 S）；template 会导致蓝底白字变成白块
+            // #[cfg(target_os = "macos")] let _ = tray.set_icon_as_template(true);
 
             Ok(())
         })
