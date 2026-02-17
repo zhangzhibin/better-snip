@@ -1977,6 +1977,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the capture_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-capture-fullscreen",
+          "markdownDescription": "Enables the capture_fullscreen command without any pre-configured scope."
+        },
+        {
           "description": "Enables the capture_region command without any pre-configured scope.",
           "type": "string",
           "const": "allow-capture-region",
@@ -1999,6 +2005,12 @@
           "type": "string",
           "const": "allow-log-from-frontend",
           "markdownDescription": "Enables the log_from_frontend command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the capture_fullscreen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-capture-fullscreen",
+          "markdownDescription": "Denies the capture_fullscreen command without any pre-configured scope."
         },
         {
           "description": "Denies the capture_region command without any pre-configured scope.",

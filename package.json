@@ -7,10 +7,13 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "dev:vite": "vite",
-    "build:vite": "vite build"
+    "build:vite": "vite build",
+    "icon": "node scripts/generate-icon.js",
+    "dev:app": "cd src-tauri && cargo build && open \"../dev-app/Mac Screenshot Dev.app\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",
+    "canvas": "^3.0.0",
     "vite": "^6"
   },
   "dependencies": {

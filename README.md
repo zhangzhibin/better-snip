@@ -14,6 +14,9 @@ npm install
 # 开发（需先授权「屏幕录制」）
 npm run dev
 
+# 开发且希望 Dock 显示应用图标：先在一个终端运行 npm run dev:vite，再在另一终端运行
+npm run dev:app
+
 # 打包
 npm run build
 ```
@@ -39,6 +42,20 @@ npm run build
   - 用终端运行一次应用即可在启动时看到日志路径，例如：`[mac-screenshot] debug log: /var/folders/.../T/mac-screenshot-debug.log`。  
   - 或在主窗口通过开发者工具执行 `await window.__TAURI__.core.invoke('get_debug_log_path')` 得到路径后，在 Finder 中「前往 → 前往文件夹」粘贴打开。  
   - 若日志里没有 `[frontend] finish(...)`，说明选区结束时代码未执行到 invoke；若没有 `capture_region called`，说明前端 invoke 未到达 Rust（权限或窗口未匹配能力集）。
+
+## 应用图标（菜单栏 / Dock）
+
+用脚本生成一张带字母的 512×512 图，再交给 Tauri 生成全套图标（含 macOS `.icns`）：
+
+```bash
+# 生成蓝色底 + 白色字母 S 的 icon-512.png（可传参换字母，如 npm run icon C）
+npm run icon
+
+# 根据该图生成各尺寸及 icon.icns
+npx tauri icon src-tauri/icons/icon-512.png
+```
+
+重新打包后，菜单栏/Dock 会显示新图标。
 
 ## 项目结构
 

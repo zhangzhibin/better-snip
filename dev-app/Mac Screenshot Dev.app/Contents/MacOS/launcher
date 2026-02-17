@@ -1,0 +1,10 @@
+#!/bin/bash
+# 开发用 .app 启动器：用本 app 的图标出现在 Dock，实际执行 target/debug 里的二进制
+# 从 Contents/MacOS 到项目根：../ = Contents, ../../ = .app, ../../../ = dev-app, ../../../../ = 项目根
+ROOT="$(cd "$(dirname "$0")/../../../../" && pwd)"
+BIN="$ROOT/src-tauri/target/debug/mac-screenshot"
+if [[ ! -x "$BIN" ]]; then
+  osascript -e "display alert \"Mac Screenshot Dev\" message \"请先执行 npm run dev 或 cargo build，生成 $BIN\""
+  exit 1
+fi
+cd "$ROOT" && exec "$BIN" "$@"
