@@ -5,6 +5,7 @@
 mod capture_macos;
 
 use capture_macos::{capture_region_png, main_display_rect, CaptureRect};
+use image::{ImageEncoder, Rgba};
 use serde::Deserialize;
 use std::io::Write;
 use std::sync::Mutex;
@@ -16,6 +17,17 @@ use tauri::State;
 use tauri::window::Color;
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+/// 区域截图测试方案：从菜单选不同入口，本次选区将按该方案换算并可选保存诊断图
+#[derive(Clone, Copy, Debug)]
+enum RegionTestScheme {
+    DivideScale,
+    NoScale,
+    DivideScaleDebug,
+    NoScaleDebug,
+    /// 不除 scale，窗口原点不翻转 y（把 inner_position 当左上角原点用）
+    NoScaleNoFlipY,
+}
 
 /// 主窗口进入选区模式前保存的尺寸/位置，退出时恢复
 struct MainWindowSavedState {
@@ -55,33 +67,163 @@ struct Region {
     height: f64,
 }
 
+/// 根据测试方案将前端 region 转为 CaptureRect（points，左上角原点）。
+/// 屏幕坐标转换：macOS 上 Cocoa/winit 使用左下角原点，CGDisplay 也是；我们 rect 用「左上角」语义，
+/// 所以用「主屏高度 - 窗口在 Cocoa 下的 y - 窗口高度」得到窗口顶边在「从顶算起的 y」。
+fn region_to_rect(app: &tauri::AppHandle, region: &Region, scheme: Option<RegionTestScheme>) -> (CaptureRect, bool) {
+    let scale = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .and_then(|w| w.scale_factor().ok())
+        .unwrap_or(1.0);
+    let (mut rect, save_debug) = match scheme {
+        Some(RegionTestScheme::DivideScale) | Some(RegionTestScheme::DivideScaleDebug) => (
+            CaptureRect {
+                x: region.x / scale,
+                y: region.y / scale,
+                width: region.width / scale,
+                height: region.height / scale,
+            },
+            matches!(scheme, Some(RegionTestScheme::DivideScaleDebug)),
+        ),
+        Some(RegionTestScheme::NoScale) | Some(RegionTestScheme::NoScaleDebug) => (
+            CaptureRect {
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+            },
+            matches!(scheme, Some(RegionTestScheme::NoScaleDebug)),
+        ),
+        Some(RegionTestScheme::NoScaleNoFlipY) => (
+            CaptureRect {
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+            },
+            false,
+        ),
+        None => (
+            CaptureRect {
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+            },
+            std::env::var("MAC_SCREENSHOT_DEBUG").as_deref() == Ok("1"),
+        ),
+    };
+    // 默认及 NoScale*：前端坐标已是 points 且全屏窗口覆盖主屏（0,0），直接传递。
+    // 如果窗口没有精确覆盖屏幕左上角，用 inner_position 修正。
+    let add_window_origin = matches!(
+        scheme,
+        Some(RegionTestScheme::NoScaleNoFlipY)
+    );
+    if add_window_origin {
+        if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+            if let (Ok(pos), Ok(sf)) = (w.inner_position(), w.scale_factor()) {
+                rect.x += pos.x as f64 / sf;
+                rect.y += pos.y as f64 / sf;
+                debug_log(&format!(
+                    "region_to_rect add_window_origin: ({}, {})",
+                    pos.x as f64 / sf,
+                    pos.y as f64 / sf
+                ));
+            }
+        }
+    }
+    (rect, save_debug)
+}
+
+/// 将全屏图 + 红框(rect) 与裁切图保存到桌面
+#[cfg(target_os = "macos")]
+fn save_debug_overlay_and_crop(rect: &CaptureRect, png_bytes: &[u8]) {
+    let desktop = std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join("Desktop"));
+    let Some(desktop) = desktop else { return };
+    let crop_path = desktop.join("debug_region_crop.png");
+    let overlay_path = desktop.join("debug_region_overlay.png");
+    let _ = std::fs::write(&crop_path, png_bytes);
+    debug_log(&format!("debug crop saved: {}", crop_path.display()));
+    let full = main_display_rect();
+    if let Ok(full_png) = capture_region_png(full.clone()) {
+        if let Ok(img) = image::load_from_memory(&full_png) {
+            let mut rgba = img.to_rgba8();
+            let (w, h) = (rgba.width() as f64, rgba.height() as f64);
+            let scale_x = w / full.width;
+            let scale_y = h / full.height;
+            let left = (rect.x * scale_x).round() as i32;
+            let top = (rect.y * scale_y).round() as i32;
+            let rw = (rect.width * scale_x).round() as i32;
+            let rh = (rect.height * scale_y).round() as i32;
+            let stroke = 4i32;
+            let red: [u8; 4] = [255, 0, 0, 255];
+            let (wi, hi) = (rgba.width() as i32, rgba.height() as i32);
+            let mut set = |x: i32, y: i32| {
+                if x >= 0 && x < wi && y >= 0 && y < hi {
+                    rgba.put_pixel(x as u32, y as u32, Rgba(red));
+                }
+            };
+            for dx in 0..stroke {
+                for py in top..(top + rh) {
+                    set(left + dx, py);
+                    set(left + rw - 1 - dx, py);
+                }
+            }
+            for dy in 0..stroke {
+                for px in left..(left + rw) {
+                    set(px, top + dy);
+                    set(px, top + rh - 1 - dy);
+                }
+            }
+            let mut out = Vec::new();
+            let mut cursor = std::io::Cursor::new(&mut out);
+            if image::codecs::png::PngEncoder::new(&mut cursor)
+                .write_image(
+                    rgba.as_raw(),
+                    rgba.width(),
+                    rgba.height(),
+                    image::ExtendedColorType::Rgba8,
+                )
+                .is_ok()
+            {
+                let _ = std::fs::write(&overlay_path, &out);
+                debug_log(&format!("debug overlay saved: {}", overlay_path.display()));
+            }
+        }
+    }
+}
+
 /// 前端选区完成后调用：截屏 → 写剪贴板 → 可选保存 → 主窗口退回 index
 #[tauri::command]
 async fn capture_region(
     app: tauri::AppHandle,
     state: State<'_, Mutex<Option<MainWindowSavedState>>>,
+    scheme_state: State<'_, Mutex<Option<RegionTestScheme>>>,
     region: Region,
     save_to_file: Option<String>,
 ) -> Result<(), String> {
-    let msg = format!("capture_region called x={} y={} w={} h={}", region.x, region.y, region.width, region.height);
+    let scheme = scheme_state.lock().ok().and_then(|mut g| g.take());
+    let msg = format!(
+        "capture_region x={} y={} w={} h={} scheme={:?}",
+        region.x, region.y, region.width, region.height, scheme
+    );
     debug_log(&msg);
     eprintln!("[capture_region] {}", msg);
 
-    // 前端坐标即窗口坐标；全屏时窗口与主屏重合，直接使用（此前按“窗口左下角”换算导致首次也偏移，已撤销）
-    let rect = CaptureRect {
-        x: region.x,
-        y: region.y,
-        width: region.width,
-        height: region.height,
-    };
-    // 等待前端已隐藏蒙版并给合成器一帧时间，再截屏，避免截到蒙版/选区框或旧画面
+    let (rect, save_debug) = region_to_rect(&app, &region, scheme);
+    // 等待前端已隐藏蒙版并给合成器一帧时间，再截屏
     let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(80))).await;
-    let png_bytes = capture_region_png(rect).map_err(|e| {
+    let png_bytes = capture_region_png(rect.clone()).map_err(|e| {
         let err_msg = format!("capture_region_png error: {}", e);
         debug_log(&err_msg);
         eprintln!("[capture_region] {}", err_msg);
         e
     })?;
+
+    #[cfg(target_os = "macos")]
+    if save_debug {
+        save_debug_overlay_and_crop(&rect, &png_bytes);
+    }
 
     // 剪贴板写入图片（macOS 用 arboard）
     #[cfg(target_os = "macos")]
@@ -259,6 +401,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
         .manage(Mutex::new(None::<MainWindowSavedState>))
+        .manage(Mutex::new(None::<RegionTestScheme>))
         .invoke_handler(tauri::generate_handler![
             capture_region,
             capture_fullscreen,
@@ -302,6 +445,11 @@ pub fn run() {
             let sub = SubmenuBuilder::new(app, "Screenshot")
                 .text("capture_full", "Capture Full Screen")
                 .text("capture", "Capture Region")
+                .text("test_divide", "Test: 除scale")
+                .text("test_noscale", "Test: 不除scale")
+                .text("test_divide_debug", "Test: 除scale+诊断图")
+                .text("test_noscale_debug", "Test: 不除scale+诊断图")
+                .text("test_noscale_noflip", "Test: 不除scale+不翻转y")
                 .text("quit", "Quit")
                 .build()?;
             let menu = MenuBuilder::new(app).item(&sub).build()?;
@@ -322,6 +470,61 @@ pub fn run() {
                             eprintln!("open_capture_window: {}", e);
                         }
                     }
+                } else if id == "test_divide" {
+                    if let Some(scheme) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                        if let Ok(mut g) = scheme.lock() {
+                            *g = Some(RegionTestScheme::DivideScale);
+                        }
+                    }
+                    if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                        if let Err(e) = open_capture_window(app_handle, &state) {
+                            eprintln!("open_capture_window: {}", e);
+                        }
+                    }
+                } else if id == "test_noscale" {
+                    if let Some(scheme) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                        if let Ok(mut g) = scheme.lock() {
+                            *g = Some(RegionTestScheme::NoScale);
+                        }
+                    }
+                    if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                        if let Err(e) = open_capture_window(app_handle, &state) {
+                            eprintln!("open_capture_window: {}", e);
+                        }
+                    }
+                } else if id == "test_divide_debug" {
+                    if let Some(scheme) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                        if let Ok(mut g) = scheme.lock() {
+                            *g = Some(RegionTestScheme::DivideScaleDebug);
+                        }
+                    }
+                    if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                        if let Err(e) = open_capture_window(app_handle, &state) {
+                            eprintln!("open_capture_window: {}", e);
+                        }
+                    }
+                } else if id == "test_noscale_debug" {
+                    if let Some(scheme) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                        if let Ok(mut g) = scheme.lock() {
+                            *g = Some(RegionTestScheme::NoScaleDebug);
+                        }
+                    }
+                    if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                        if let Err(e) = open_capture_window(app_handle, &state) {
+                            eprintln!("open_capture_window: {}", e);
+                        }
+                    }
+                } else if id == "test_noscale_noflip" {
+                    if let Some(scheme) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                        if let Ok(mut g) = scheme.lock() {
+                            *g = Some(RegionTestScheme::NoScaleNoFlipY);
+                        }
+                    }
+                    if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                        if let Err(e) = open_capture_window(app_handle, &state) {
+                            eprintln!("open_capture_window: {}", e);
+                        }
+                    }
                 } else if id == "quit" {
                     app_handle.exit(0);
                 }
@@ -330,8 +533,15 @@ pub fn run() {
             // 菜单栏右侧 Tray 图标（macOS 上显示在顶部菜单栏右侧），方便快速区域截图
             let tray_full = MenuItemBuilder::with_id("tray_full", "Capture Full Screen").build(app)?;
             let tray_capture = MenuItemBuilder::with_id("tray_capture", "Capture Region").build(app)?;
+            let tray_t1 = MenuItemBuilder::with_id("tray_test_divide", "Test: 除scale").build(app)?;
+            let tray_t2 = MenuItemBuilder::with_id("tray_test_noscale", "Test: 不除scale").build(app)?;
+            let tray_t3 = MenuItemBuilder::with_id("tray_test_divide_debug", "Test: 除scale+诊断").build(app)?;
+            let tray_t4 = MenuItemBuilder::with_id("tray_test_noscale_debug", "Test: 不除scale+诊断").build(app)?;
+            let tray_t5 = MenuItemBuilder::with_id("tray_test_noscale_noflip", "Test: 不除scale+不翻转y").build(app)?;
             let tray_quit = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)?;
-            let tray_menu = MenuBuilder::new(app).items(&[&tray_full, &tray_capture, &tray_quit]).build()?;
+            let tray_menu = MenuBuilder::new(app)
+                .items(&[&tray_full, &tray_capture, &tray_t1, &tray_t2, &tray_t3, &tray_t4, &tray_t5, &tray_quit])
+                .build()?;
             let tray_icon = app.default_window_icon().cloned();
             #[cfg(target_os = "macos")]
             let tray_icon = tray_icon.or_else(|| {
@@ -365,6 +575,56 @@ pub fn run() {
                                 if let Err(e) = open_capture_window(app_handle, &state) {
                                     eprintln!("tray open_capture_window: {}", e);
                                 }
+                            }
+                        }
+                        "tray_test_divide" => {
+                            if let Some(s) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                                if let Ok(mut g) = s.lock() {
+                                    *g = Some(RegionTestScheme::DivideScale);
+                                }
+                            }
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                let _ = open_capture_window(app_handle, &state);
+                            }
+                        }
+                        "tray_test_noscale" => {
+                            if let Some(s) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                                if let Ok(mut g) = s.lock() {
+                                    *g = Some(RegionTestScheme::NoScale);
+                                }
+                            }
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                let _ = open_capture_window(app_handle, &state);
+                            }
+                        }
+                        "tray_test_divide_debug" => {
+                            if let Some(s) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                                if let Ok(mut g) = s.lock() {
+                                    *g = Some(RegionTestScheme::DivideScaleDebug);
+                                }
+                            }
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                let _ = open_capture_window(app_handle, &state);
+                            }
+                        }
+                        "tray_test_noscale_debug" => {
+                            if let Some(s) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                                if let Ok(mut g) = s.lock() {
+                                    *g = Some(RegionTestScheme::NoScaleDebug);
+                                }
+                            }
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                let _ = open_capture_window(app_handle, &state);
+                            }
+                        }
+                        "tray_test_noscale_noflip" => {
+                            if let Some(s) = app_handle.try_state::<Mutex<Option<RegionTestScheme>>>() {
+                                if let Ok(mut g) = s.lock() {
+                                    *g = Some(RegionTestScheme::NoScaleNoFlipY);
+                                }
+                            }
+                            if let Some(state) = app_handle.try_state::<Mutex<Option<MainWindowSavedState>>>() {
+                                let _ = open_capture_window(app_handle, &state);
                             }
                         }
                         "tray_quit" => {

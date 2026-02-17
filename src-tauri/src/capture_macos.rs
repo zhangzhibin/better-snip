@@ -9,7 +9,7 @@ use core_graphics::image::CGImage;
 #[cfg(target_os = "macos")]
 use image::{ImageBuffer, ImageEncoder, RgbaImage};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CaptureRect {
     pub x: f64,
     pub y: f64,
@@ -32,12 +32,11 @@ pub fn main_display_rect() -> CaptureRect {
 
 #[cfg(target_os = "macos")]
 /// 截取主显示器指定区域（坐标系：左上角为原点，单位 points），返回 PNG 字节。
+/// Apple 文档：CGDisplayCreateImageForRect 的 rect 使用 Quartz Display Space，
+/// 即左上角为原点、Y 轴向下，与前端/WebView 坐标系一致，无需翻转。
 pub fn capture_region_png(rect: CaptureRect) -> Result<Vec<u8>, String> {
     let display = CGDisplay::main();
-    let bounds = display.bounds();
-    // CG 坐标系 Y 向上，转为左下角原点
-    let y_bottom = bounds.size.height - rect.y - rect.height;
-    let origin = CGPoint::new(rect.x, y_bottom);
+    let origin = CGPoint::new(rect.x, rect.y);
     let size = CGSize::new(rect.width, rect.height);
     let cg_rect = CGRect::new(&origin, &size);
     let cg_image = display
