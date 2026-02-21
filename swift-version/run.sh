@@ -24,13 +24,15 @@ cat > "${PLIST}" <<PLIST
   <key>CFBundleName</key>
   <string>${APP_NAME}</string>
   <key>CFBundleIdentifier</key>
-  <string>com.cloudcr.macscreenshot</string>
+  <string>com.cloudcr.macscreenshot.swift</string>
   <key>CFBundleVersion</key>
   <string>1.0</string>
   <key>CFBundleExecutable</key>
   <string>${APP_NAME}</string>
   <key>LSUIElement</key>
   <true/>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>MacScreenshot needs screen recording permission to capture screenshots.</string>
 </dict>
 </plist>
 PLIST

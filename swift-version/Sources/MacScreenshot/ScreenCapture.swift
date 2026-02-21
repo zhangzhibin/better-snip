@@ -2,25 +2,30 @@ import Cocoa
 import CoreGraphics
 
 enum ScreenCapture {
-    /// 全屏截图 → 写入剪贴板，返回是否成功
+    /// 全屏截图指定屏幕 → 写入剪贴板
     @discardableResult
-    static func captureFullScreen() -> Bool {
-        guard let cgImage = CGDisplayCreateImage(CGMainDisplayID()) else {
-            NSLog("[ScreenCapture] CGDisplayCreateImage failed (need Screen Recording permission)")
+    static func captureFullScreen(displayID: CGDirectDisplayID) -> Bool {
+        guard let cgImage = CGDisplayCreateImage(displayID) else {
+            NSLog("[ScreenCapture] CGDisplayCreateImage failed for display %u", displayID)
             return false
         }
         return writeToClipboard(cgImage)
     }
 
-    /// 区域截图（左上角原点，points）→ 写入剪贴板
+    /// 区域截图指定屏幕（左上角原点，points）→ 写入剪贴板
     @discardableResult
-    static func captureRegion(rect: CGRect) -> Bool {
+    static func captureRegion(displayID: CGDirectDisplayID, rect: CGRect) -> Bool {
         guard rect.width >= 2, rect.height >= 2 else { return false }
-        guard let cgImage = CGDisplayCreateImage(CGMainDisplayID(), rect: rect) else {
-            NSLog("[ScreenCapture] CGDisplayCreateImage(rect:) failed")
+        guard let cgImage = CGDisplayCreateImage(displayID, rect: rect) else {
+            NSLog("[ScreenCapture] CGDisplayCreateImage(rect:) failed for display %u", displayID)
             return false
         }
         return writeToClipboard(cgImage)
+    }
+
+    /// 从 NSScreen 获取 CGDirectDisplayID
+    static func displayID(for screen: NSScreen) -> CGDirectDisplayID {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
     }
 
     private static func writeToClipboard(_ cgImage: CGImage) -> Bool {
@@ -32,7 +37,6 @@ enum ScreenCapture {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setData(tiffData, forType: .tiff)
-        // 同时写入 PNG 格式，兼容更多应用
         if let pngData = rep.representation(using: .png, properties: [:]) {
             pasteboard.setData(pngData, forType: .png)
         }

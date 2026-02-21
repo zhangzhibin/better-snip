@@ -1,8 +1,11 @@
 import Cocoa
 
-// 隐藏 Dock 图标，仅显示菜单栏托盘
-NSApp.setActivationPolicy(.accessory)
+let app = NSApplication.shared
+let appDelegate = AppDelegate()
+app.delegate = appDelegate
 
-let delegate = AppDelegate()
-NSApp.delegate = delegate
-NSApp.run()
+// 直接初始化托盘（不依赖 delegate 回调）
+appDelegate.setupTray()
+app.setActivationPolicy(.accessory)
+
+app.run()

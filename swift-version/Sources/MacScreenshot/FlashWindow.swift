@@ -1,10 +1,8 @@
 import Cocoa
 
 enum FlashWindow {
-    /// 显示全屏白色闪屏动画（模拟快门效果）
-    static func show() {
-        guard let screen = NSScreen.main else { return }
-
+    /// 在指定屏幕上显示闪屏动画
+    static func show(on screen: NSScreen) {
         let window = NSWindow(
             contentRect: screen.frame,
             styleMask: .borderless,
@@ -21,7 +19,6 @@ enum FlashWindow {
         window.alphaValue = 0
         window.orderFrontRegardless()
 
-        // 快速升到峰值后缓慢消退
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.06
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)

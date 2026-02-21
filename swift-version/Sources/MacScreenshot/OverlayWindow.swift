@@ -1,11 +1,11 @@
 import Cocoa
 
 class OverlayWindow: NSWindow {
-    init(onCapture: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
-        guard let screen = NSScreen.main else {
-            super.init(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
-            return
-        }
+    let displayID: CGDirectDisplayID
+
+    /// onCapture 回调传出 (displayID, 选区rect)
+    init(screen: NSScreen, onCapture: @escaping (CGDirectDisplayID, CGRect) -> Void, onCancel: @escaping () -> Void) {
+        self.displayID = ScreenCapture.displayID(for: screen)
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,
@@ -18,11 +18,15 @@ class OverlayWindow: NSWindow {
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false
 
-        let overlay = OverlayView(frame: screen.frame, onCapture: onCapture, onCancel: onCancel)
+        let overlay = OverlayView(
+            frame: NSRect(origin: .zero, size: screen.frame.size),
+            displayID: self.displayID,
+            onCapture: onCapture,
+            onCancel: onCancel
+        )
         self.contentView = overlay
     }
 
-    // 允许窗口接收键盘事件
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }

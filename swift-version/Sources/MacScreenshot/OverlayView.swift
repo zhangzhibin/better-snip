@@ -4,7 +4,8 @@ class OverlayView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    private var onCapture: (CGRect) -> Void
+    private let displayID: CGDirectDisplayID
+    private var onCapture: (CGDirectDisplayID, CGRect) -> Void
     private var onCancel: () -> Void
     private var startPoint: NSPoint = .zero
     private var currentPoint: NSPoint = .zero
@@ -19,11 +20,11 @@ class OverlayView: NSView {
         )
     }
 
-    init(frame: NSRect, onCapture: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
+    init(frame: NSRect, displayID: CGDirectDisplayID, onCapture: @escaping (CGDirectDisplayID, CGRect) -> Void, onCancel: @escaping () -> Void) {
+        self.displayID = displayID
         self.onCapture = onCapture
         self.onCancel = onCancel
         super.init(frame: frame)
-        // 使用追踪区域确保光标显示为十字
         let area = NSTrackingArea(
             rect: bounds,
             options: [.activeAlways, .mouseMoved, .cursorUpdate],
@@ -46,7 +47,6 @@ class OverlayView: NSView {
     // MARK: - 绘制
 
     override func draw(_ dirtyRect: NSRect) {
-        // 半透明蒙版
         NSColor(white: 0, alpha: 0.35).setFill()
         bounds.fill()
 
@@ -54,26 +54,21 @@ class OverlayView: NSView {
             let sel = selectionRect
             guard sel.width > 0, sel.height > 0 else { return }
 
-            // 选区区域透明（挖空蒙版）
             NSColor.clear.setFill()
             sel.fill(using: .copy)
 
-            // 白色边框
             NSColor.white.setStroke()
             let border = NSBezierPath(rect: sel)
             border.lineWidth = 2
             border.stroke()
 
-            // 外侧半透明阴影边框
             NSColor(white: 0, alpha: 0.5).setStroke()
             let shadow = NSBezierPath(rect: sel.insetBy(dx: -1, dy: -1))
             shadow.lineWidth = 1
             shadow.stroke()
 
-            // 尺寸信息
             drawSizeInfo(sel)
         } else {
-            // 底部提示
             drawHint()
         }
     }
@@ -124,8 +119,7 @@ class OverlayView: NSView {
         isDragging = false
         let sel = selectionRect
         if sel.width >= 2, sel.height >= 2 {
-            // 将 NSView 坐标转为屏幕坐标（isFlipped=true，左上角原点，与 CG Display 一致）
-            onCapture(sel)
+            onCapture(displayID, sel)
         } else {
             onCancel()
         }
@@ -143,7 +137,7 @@ class OverlayView: NSView {
                 isDragging = false
                 let sel = selectionRect
                 if sel.width >= 2, sel.height >= 2 {
-                    onCapture(sel)
+                    onCapture(displayID, sel)
                     return
                 }
             }
