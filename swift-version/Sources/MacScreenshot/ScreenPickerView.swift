@@ -10,6 +10,9 @@ class ScreenPickerView: NSView {
     private var onCancel: () -> Void
     private(set) var isHighlighted = false
 
+    /// 窗口模式：高亮特定窗口区域（view 坐标系，flipped），非 nil 时替代全屏红色边框
+    private(set) var highlightRect: NSRect?
+
     init(frame: NSRect, screen: NSScreen, displayID: CGDirectDisplayID,
          onSelect: @escaping (NSScreen, CGDirectDisplayID) -> Void,
          onCancel: @escaping () -> Void) {
@@ -22,24 +25,45 @@ class ScreenPickerView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // 非活跃 app 时，第一次点击直接作为 mouseDown 传递，不消耗在窗口激活上
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     func setHighlighted(_ value: Bool) {
         guard isHighlighted != value else { return }
         isHighlighted = value
+        highlightRect = nil
+        needsDisplay = true
+    }
+
+    func setHighlightRect(_ rect: NSRect?) {
+        highlightRect = rect
         needsDisplay = true
     }
 
     // MARK: - 绘制
 
     override func draw(_ dirtyRect: NSRect) {
-        if isHighlighted {
+        if let rect = highlightRect {
+            // 窗口模式：蓝色边框高亮窗口区域
+            // 半透明蒙版覆盖全屏
+            NSColor(white: 0, alpha: 0.15).setFill()
+            bounds.fill()
+
+            // 窗口区域清除蒙版
+            NSColor.clear.setFill()
+            rect.intersection(bounds).fill(using: .copy)
+
+            // 蓝色边框
+            NSColor.systemBlue.setStroke()
+            let border = NSBezierPath(rect: rect.intersection(bounds))
+            border.lineWidth = 3
+            border.stroke()
+        } else if isHighlighted {
+            // 屏幕选择模式：红色边框
             let borderWidth: CGFloat = 4
             let inset = borderWidth / 2
-            let rect = bounds.insetBy(dx: inset, dy: inset)
+            let r = bounds.insetBy(dx: inset, dy: inset)
             NSColor.systemRed.setStroke()
-            let path = NSBezierPath(rect: rect)
+            let path = NSBezierPath(rect: r)
             path.lineWidth = borderWidth
             path.stroke()
         }
