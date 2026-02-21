@@ -61,6 +61,7 @@ class AnnotationToolbar: NSView {
             (.line, "line.diagonal", "Line"),
             (.freehand, "pencil.tip", "Freehand"),
             (.text, "textformat", "Text"),
+            (.mosaic, "square.grid.3x3.fill", "Mosaic"),
         ]
         for (tool, symbol, title) in tools {
             let btn = makeToolButton(symbol: symbol, fallback: title, tag: tool.hashValue)

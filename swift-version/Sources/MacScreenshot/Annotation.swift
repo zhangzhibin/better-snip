@@ -1,7 +1,7 @@
 import Cocoa
 
 enum AnnotationTool: String, CaseIterable {
-    case arrow, rect, ellipse, line, freehand, text
+    case arrow, rect, ellipse, line, freehand, text, mosaic
 }
 
 class Annotation {
@@ -15,6 +15,8 @@ class Annotation {
     var font: NSFont = .systemFont(ofSize: 16)
     var isBold: Bool = false
     var isItalic: Bool = false
+    var mosaicImage: CGImage?
+    var brushWidth: CGFloat = 20
 
     init(tool: AnnotationTool, color: NSColor, lineWidth: CGFloat) {
         self.tool = tool
@@ -44,6 +46,17 @@ class Annotation {
             }
             return NSRect(x: minX - lineWidth, y: minY - lineWidth,
                           width: maxX - minX + lineWidth * 2, height: maxY - minY + lineWidth * 2)
+        case .mosaic:
+            guard !points.isEmpty else { return .zero }
+            var minX = CGFloat.infinity, minY = CGFloat.infinity
+            var maxX = -CGFloat.infinity, maxY = -CGFloat.infinity
+            for p in points {
+                minX = min(minX, p.x); minY = min(minY, p.y)
+                maxX = max(maxX, p.x); maxY = max(maxY, p.y)
+            }
+            let hw = brushWidth / 2
+            return NSRect(x: minX - hw, y: minY - hw,
+                          width: maxX - minX + brushWidth, height: maxY - minY + brushWidth)
         case .text:
             let size = textSize
             return NSRect(origin: startPoint, size: size)
@@ -105,7 +118,33 @@ class Annotation {
         case .text:
             guard !text.isEmpty else { return }
             (text as NSString).draw(at: startPoint, withAttributes: textAttributes)
+        case .mosaic:
+            if let img = mosaicImage {
+                let f = frame
+                guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+                ctx.saveGState()
+                // flipped view 中绘制 CGImage 需要翻转
+                ctx.translateBy(x: f.origin.x, y: f.origin.y + f.height)
+                ctx.scaleBy(x: 1, y: -1)
+                ctx.draw(img, in: CGRect(x: 0, y: 0, width: f.width, height: f.height))
+                ctx.restoreGState()
+            } else {
+                drawMosaicPreview()
+            }
         }
+    }
+
+    /// 拖拽过程中的马赛克预览（半透明灰色笔触）
+    private func drawMosaicPreview() {
+        guard points.count >= 2 else { return }
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for i in 1..<points.count { path.line(to: points[i]) }
+        path.lineWidth = brushWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        NSColor(white: 0.5, alpha: 0.4).setStroke()
+        path.stroke()
     }
 
     private func drawArrow() {
@@ -163,6 +202,14 @@ class Annotation {
                 }
             }
             return false
+        case .mosaic:
+            let mosaicTolerance = brushWidth / 2 + 4
+            for i in 1..<points.count {
+                if distanceToSegment(point: point, a: points[i-1], b: points[i]) < mosaicTolerance {
+                    return true
+                }
+            }
+            return false
         case .text:
             return frame.insetBy(dx: -4, dy: -4).contains(point)
         }
@@ -184,7 +231,7 @@ class Annotation {
         case .arrow, .line, .rect, .ellipse:
             startPoint.x += delta.width; startPoint.y += delta.height
             endPoint.x += delta.width; endPoint.y += delta.height
-        case .freehand:
+        case .freehand, .mosaic:
             for i in 0..<points.count {
                 points[i].x += delta.width; points[i].y += delta.height
             }
@@ -204,7 +251,7 @@ class Annotation {
         case .arrow, .line, .rect, .ellipse:
             startPoint = scaled(startPoint, from: old, to: newFrame, sx: sx, sy: sy)
             endPoint = scaled(endPoint, from: old, to: newFrame, sx: sx, sy: sy)
-        case .freehand:
+        case .freehand, .mosaic:
             for i in 0..<points.count {
                 points[i] = scaled(points[i], from: old, to: newFrame, sx: sx, sy: sy)
             }

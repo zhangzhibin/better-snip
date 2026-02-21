@@ -1,4 +1,5 @@
 import Cocoa
+import CoreImage
 
 /// 缩放手柄位置
 enum ResizeHandle: Int, CaseIterable {
@@ -178,7 +179,12 @@ class AnnotationCanvas: NSView {
         let ann = makeAnnotation()
         ann.startPoint = point
         ann.endPoint = point
-        if currentTool == .freehand { ann.points = [point] }
+        if currentTool == .freehand || currentTool == .mosaic {
+            ann.points = [point]
+        }
+        if currentTool == .mosaic {
+            ann.brushWidth = mosaicBrushWidth
+        }
         drawingAnnotation = ann
         state = .drawing
         setNeedsDisplay(bounds)
@@ -190,7 +196,7 @@ class AnnotationCanvas: NSView {
         switch state {
         case .drawing:
             guard let ann = drawingAnnotation else { return }
-            if ann.tool == .freehand {
+            if ann.tool == .freehand || ann.tool == .mosaic {
                 ann.points.append(point)
             } else {
                 ann.endPoint = point
@@ -225,12 +231,20 @@ class AnnotationCanvas: NSView {
         switch state {
         case .drawing:
             if let ann = drawingAnnotation {
-                let dx = abs(ann.endPoint.x - ann.startPoint.x)
-                let dy = abs(ann.endPoint.y - ann.startPoint.y)
-                let minSize: CGFloat = ann.tool == .freehand ? 2 : 4
-                if dx > minSize || dy > minSize || (ann.tool == .freehand && ann.points.count > 2) {
-                    annotations.append(ann)
-                    onAnnotationsChanged?()
+                if ann.tool == .mosaic {
+                    if ann.points.count >= 2 {
+                        generateMosaicImage(for: ann)
+                        annotations.append(ann)
+                        onAnnotationsChanged?()
+                    }
+                } else {
+                    let dx = abs(ann.endPoint.x - ann.startPoint.x)
+                    let dy = abs(ann.endPoint.y - ann.startPoint.y)
+                    let minSize: CGFloat = ann.tool == .freehand ? 2 : 4
+                    if dx > minSize || dy > minSize || (ann.tool == .freehand && ann.points.count > 2) {
+                        annotations.append(ann)
+                        onAnnotationsChanged?()
+                    }
                 }
             }
             drawingAnnotation = nil
@@ -379,6 +393,90 @@ class AnnotationCanvas: NSView {
             onAnnotationsChanged?()
             setNeedsDisplay(bounds)
         }
+    }
+
+    // MARK: - 马赛克
+
+    /// 线宽到笔刷宽度的映射
+    var mosaicBrushWidth: CGFloat {
+        switch currentLineWidth {
+        case ...1.5:    return 16
+        case 1.5...4:   return 28
+        default:         return 44
+        }
+    }
+
+    /// 根据涂抹路径和背景图生成马赛克预渲染图
+    private func generateMosaicImage(for annotation: Annotation) {
+        guard let bg = backgroundImage, !annotation.points.isEmpty else { return }
+
+        let f = annotation.frame
+        guard f.width > 1, f.height > 1 else { return }
+
+        // canvas 点坐标到像素坐标的缩放因子
+        let scaleX = CGFloat(bg.width) / bounds.width
+        let scaleY = CGFloat(bg.height) / bounds.height
+
+        // 裁剪区域（像素坐标）
+        let cropRect = CGRect(
+            x: f.origin.x * scaleX,
+            y: f.origin.y * scaleY,
+            width: f.width * scaleX,
+            height: f.height * scaleY
+        ).integral
+
+        guard cropRect.width >= 2, cropRect.height >= 2,
+              let cropped = bg.cropping(to: cropRect) else { return }
+
+        // CIPixellate 像素化
+        let ciImage = CIImage(cgImage: cropped)
+        let pixelScale = max(8, max(cropRect.width, cropRect.height) / 12)
+        guard let filter = CIFilter(name: "CIPixellate") else { return }
+        filter.setValue(ciImage, forKey: kCIInputImageKey)
+        filter.setValue(pixelScale, forKey: kCIInputScaleKey)
+        filter.setValue(CIVector(x: 0, y: 0), forKey: kCIInputCenterKey)
+
+        let ciCtx = CIContext()
+        guard let pixelatedCI = filter.outputImage,
+              let pixelatedCG = ciCtx.createCGImage(pixelatedCI, from: ciImage.extent) else { return }
+
+        // 创建最终图像：用笔刷路径做 clip，只保留涂抹区域的马赛克
+        let w = Int(cropRect.width), h = Int(cropRect.height)
+        guard let maskCtx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+
+        // CGContext 原点在左下角，需要翻转以匹配 flipped view 坐标
+        maskCtx.translateBy(x: 0, y: CGFloat(h))
+        maskCtx.scaleBy(x: 1, y: -1)
+
+        // 构建笔刷路径（转为裁剪区域的局部像素坐标）
+        let brushPath = CGMutablePath()
+        let pts = annotation.points
+        let bw = annotation.brushWidth * scaleX
+        brushPath.move(to: CGPoint(x: (pts[0].x - f.origin.x) * scaleX,
+                                   y: (pts[0].y - f.origin.y) * scaleY))
+        for i in 1..<pts.count {
+            brushPath.addLine(to: CGPoint(x: (pts[i].x - f.origin.x) * scaleX,
+                                          y: (pts[i].y - f.origin.y) * scaleY))
+        }
+
+        maskCtx.setLineWidth(bw)
+        maskCtx.setLineCap(.round)
+        maskCtx.setLineJoin(.round)
+        maskCtx.addPath(brushPath)
+        maskCtx.replacePathWithStrokedPath()
+        maskCtx.clip()
+
+        // 在 clip 内绘制像素化图
+        maskCtx.translateBy(x: 0, y: CGFloat(h))
+        maskCtx.scaleBy(x: 1, y: -1)
+        maskCtx.draw(pixelatedCG, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        annotation.mosaicImage = maskCtx.makeImage()
     }
 
     // MARK: - Helpers
