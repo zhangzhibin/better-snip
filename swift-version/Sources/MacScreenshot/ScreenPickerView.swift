@@ -22,6 +22,9 @@ class ScreenPickerView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // 非活跃 app 时，第一次点击直接作为 mouseDown 传递，不消耗在窗口激活上
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     func setHighlighted(_ value: Bool) {
         guard isHighlighted != value else { return }
         isHighlighted = value

@@ -61,9 +61,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         closeAllOverlays()
         currentMode = mode
 
-        // 激活 app，确保能接收键盘事件
-        NSApp.activate(ignoringOtherApps: true)
-
         for screen in NSScreen.screens {
             let picker = ScreenPickerWindow(screen: screen, onSelect: { [weak self] selectedScreen, displayID in
                 self?.handleScreenSelected(screen: selectedScreen, displayID: displayID)
@@ -74,33 +71,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             picker.orderFrontRegardless()
         }
 
-        // 全局事件监听：鼠标移动 + 键盘
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .keyDown]) { [weak self] event in
-            guard let self = self, !self.pickerWindows.isEmpty else { return event }
-            if event.type == .keyDown {
-                return self.handlePickerKeyDown(event)
-            } else {
-                self.updatePickerHighlights()
-            }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            self?.updatePickerHighlights()
             return event
         }
 
         updatePickerHighlights()
-    }
-
-    private func handlePickerKeyDown(_ event: NSEvent) -> NSEvent? {
-        switch event.keyCode {
-        case 53: // Esc
-            closeAllPickers()
-            return nil
-        case 36: // Enter — 确认当前高亮的屏幕
-            if let highlighted = pickerWindows.first(where: { $0.pickerView?.isHighlighted == true }) {
-                handleScreenSelected(screen: highlighted.targetScreen, displayID: highlighted.displayID)
-            }
-            return nil
-        default:
-            return event
-        }
     }
 
     private func updatePickerHighlights() {
