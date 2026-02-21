@@ -7,7 +7,7 @@
 | 目录 | 技术栈 | 状态 |
 |------|--------|------|
 | `tauri-version/` | Tauri 2 + Rust + Core Graphics | 已完成基础功能 |
-| `swift-version/` | Swift + AppKit + Core Graphics | 开发中 |
+| `swift-version/` | Swift + AppKit + Core Graphics | 活跃开发 |
 
 ## 文档
 
@@ -28,5 +28,5 @@ npx tauri dev
 
 ```bash
 cd swift-version
-# 待补充
+./run.sh
 ```

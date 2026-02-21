@@ -4,110 +4,105 @@
 
 极简 macOS 截图工具。应用启动后仅在系统菜单栏显示托盘图标，通过托盘菜单触发全屏或区域截图，截图结果写入系统剪贴板。
 
-- **平台**：macOS 10.15+
-- **技术栈**：Tauri 2 (Rust) + Vite (HTML/JS) + Core Graphics 原生截屏
-- **运行形态**：无主窗口、无 Dock 图标（打包后通过 `LSUIElement` 实现）
+- **平台**：macOS 12+
+- **技术栈**：Swift + AppKit + Core Graphics
+- **运行形态**：无主窗口、无 Dock 图标（`LSUIElement` + `setActivationPolicy(.accessory)`）
 
 ## 功能清单
 
 | 功能 | 说明 |
 |------|------|
-| 全屏截图 | 截取主显示器整屏，写入剪贴板 |
-| 区域截图 | 全屏半透明蒙版 → 拖拽选区 → 截取选区内容 → 写入剪贴板 |
+| 全屏截图 | 选屏 → 立即截取整屏 → 写入剪贴板 |
+| 区域截图 | 选屏 → 立即截取整屏 → 在静态截图上拖选裁剪 → 写入剪贴板 |
+| 多屏幕支持 | 鼠标移动选屏（红色边框提示），点击确认目标屏幕 |
 | 系统托盘 | 菜单栏右侧图标，菜单项：Capture Full Screen / Capture Region / Quit |
-| 闪屏反馈 | 截图成功后全屏白色闪光（模拟快门），提示用户操作已完成 |
-| 保存到文件 | 后端接口已预留 `save_to_file` 参数，UI 尚未实现 |
+| 闪屏反馈 | 截图成功后在目标屏幕显示白色闪光（模拟快门） |
 
 ## 技术架构
 
 ```mermaid
 flowchart LR
-    Tray["系统托盘菜单"] -->|"点击菜单项"| MenuEvent["Rust on_menu_event"]
-    MenuEvent -->|"全屏"| FullScreen["capture_fullscreen"]
-    MenuEvent -->|"区域"| OpenCapture["open_capture_window"]
-    OpenCapture -->|"主窗口全屏+透明"| Frontend["前端选区 UI"]
-    Frontend -->|"invoke capture_region"| RegionCmd["capture_region"]
-    FullScreen --> CG["Core Graphics\nCGDisplayCreateImageForRect"]
-    RegionCmd --> CG
-    CG --> PNG["PNG 编码"]
-    PNG --> Clipboard["arboard 写入剪贴板"]
-    PNG -.->|"可选"| File["写入文件"]
-    RegionCmd --> Flash["emit show-flash"]
-    FullScreen --> Flash
-    Flash --> WebView["前端闪屏动画"]
+    Tray["系统托盘菜单"] -->|"点击菜单项"| Mode["确定模式\nfullScreen / region"]
+    Mode --> Picker["ScreenPickerWindow\n所有屏幕透明覆盖"]
+    Picker -->|"鼠标移动"| Highlight["红色边框跟随\n(mouseMoved monitor)"]
+    Picker -->|"鼠标点击"| Selected["关闭 Picker\n立即 CGDisplayCreateImage"]
+    Selected -->|"全屏模式"| Clipboard["写入剪贴板\n(TIFF + PNG)"]
+    Selected -->|"区域模式"| Overlay["OverlayWindow\n截图作为背景"]
+    Overlay -->|"拖选裁剪"| Crop["cgImage.cropping"]
+    Crop --> Clipboard
+    Clipboard --> Flash["FlashWindow\n目标屏幕闪屏"]
 ```
 
 ## 交互流程
 
+### 选屏阶段（全屏和区域共用）
+
+1. 用户点击托盘菜单 **Capture Full Screen** 或 **Capture Region**
+2. 所有屏幕覆盖近透明窗口（`alpha: 0.001`，不改变当前活跃窗口状态）
+3. 鼠标所在屏幕显示红色边框（`NSEvent.addLocalMonitorForEvents(.mouseMoved)` 追踪位置）
+4. 鼠标左键点击确认目标屏幕
+
 ### 全屏截图
 
-1. 用户点击托盘菜单 **Capture Full Screen**
-2. Rust 调用 `CGDisplayCreateImageForRect` 截取主屏全部区域
-3. PNG 编码 → BGRA 转 RGBA → `arboard` 写入系统剪贴板
-4. 主窗口临时全屏显示，触发白色闪屏动画（0.5s），随后隐藏
+5. 关闭所有选屏窗口
+6. 立即 `CGDisplayCreateImage(displayID)` 截取目标屏幕
+7. 写入剪贴板（TIFF + PNG 双格式）
+8. 在目标屏幕显示闪屏动画
 
 ### 区域截图
 
-1. 用户点击托盘菜单 **Capture Region**
-2. 保存主窗口当前状态，将其设为全屏、无边框、透明背景，并 `show()`
-3. 前端显示半透明蒙版（`rgba(0,0,0,0.35)`）+ 十字光标
-4. 用户拖拽鼠标画出矩形，实时显示选区框和尺寸信息
-5. 松开鼠标（或按 Enter）：
-   - 隐藏蒙版、选区框、尺寸信息（避免被截入）
-   - 等待两帧 + 50ms 确保合成器更新
-   - 调用 `capture_region`，Rust 端再等 80ms 后截屏
-6. 截图成功 → 写入剪贴板 → 触发闪屏 → 350ms 后退出选区模式 → 隐藏主窗口
-7. 按 Esc 取消选区，直接退出
+5. 关闭所有选屏窗口
+6. 立即 `CGDisplayCreateImage(displayID)` 截取目标屏幕
+7. 在目标屏幕打开 OverlayWindow，以截取的图片作为背景
+8. 用户拖拽选区（选区外半透明蒙版，选区内显示原图）
+9. 松开鼠标：`cgImage.cropping(to: scaledRect)` 裁剪
+10. 写入剪贴板 → 闪屏
+11. 按 Esc 取消
+
+> 区域截图本质上是全屏截图的裁剪操作。截图在选屏确认时已完成，用户在静态图上拖选，确保截到的是真实屏幕内容（包括活跃窗口状态、菜单栏等）。
 
 ## 坐标系
 
-前端 WebView 坐标（CSS pixels）与 macOS 逻辑坐标（points）一致，全屏窗口从 `(0, 0)` 覆盖主屏，因此前端 `clientX/clientY` 可直接作为 `CGDisplayCreateImageForRect` 的输入坐标。
-
-- **坐标原点**：屏幕左上角
-- **Y 轴方向**：向下
-- **单位**：逻辑像素（points），Retina 屏上 1 point = 2 物理像素，CG API 内部处理缩放
-
-> 注意：`CGDisplayCreateImageForRect` 使用 Quartz Display Space（左上角原点），与 Quartz 2D 绘图坐标系（左下角原点）不同，无需翻转 Y 轴。
+- **OverlayView**：`isFlipped = true`，坐标原点在左上角，Y 轴向下
+- **CG Display 坐标**：`CGDisplayCreateImage(rect:)` 使用左上角原点，与 flipped NSView 坐标一致
+- **Retina 缩放**：`CGDisplayCreateImage` 返回像素尺寸的 CGImage，裁剪时需将 points 坐标乘以 `screen.backingScaleFactor`
 
 ## 项目结构
 
 ```
 mac-screenshot/
-├── index.html          # 主页面（主视图 + 选区视图 + 闪屏层）
-├── index.js            # 前端逻辑（选区交互、事件监听、invoke 调用）
-├── capture.html/js     # 早期独立选区页（已废弃，逻辑合并至 index.*）
-├── vite.config.js      # Vite 配置
-├── package.json        # npm 脚本与依赖
 ├── docs/
-│   ├── spec.md         # 本文档
-│   └── region-capture-coordinates.md  # 坐标系详细说明
-├── src-tauri/
-│   ├── tauri.conf.json # Tauri 配置（窗口、打包、权限）
-│   ├── Cargo.toml      # Rust 依赖
-│   ├── Info.plist      # macOS LSUIElement（隐藏 Dock）
-│   ├── capabilities/   # IPC 命令权限声明
-│   ├── src/
-│   │   ├── lib.rs      # 应用入口、菜单/托盘、窗口管理、IPC 命令
-│   │   └── capture_macos.rs  # Core Graphics 截屏 + PNG 编码
-│   └── icons/          # 多尺寸应用图标
-└── scripts/
-    └── generate-icon.js  # 图标生成脚本
+│   └── spec.md                         # 本文档
+├── swift-version/                      # Swift 原生版本（活跃开发）
+│   ├── Package.swift                   # SPM 配置
+│   ├── Sources/MacScreenshot/
+│   │   ├── main.swift                  # 入口：NSApplication + 隐藏 Dock
+│   │   ├── AppDelegate.swift           # 托盘菜单 + 选屏/截图流程编排
+│   │   ├── ScreenCapture.swift         # CGDisplayCreateImage 截屏 + 裁剪 + 剪贴板
+│   │   ├── ScreenPickerWindow.swift    # 选屏透明窗口
+│   │   ├── ScreenPickerView.swift      # 选屏红色边框绘制 + 鼠标交互
+│   │   ├── OverlayWindow.swift         # 区域选区窗口（背景为已截图片）
+│   │   ├── OverlayView.swift           # 选区绘制（蒙版 + 拖拽 + 尺寸信息）
+│   │   └── FlashWindow.swift           # 截图成功闪屏
+│   ├── run.sh                          # 编译 + 打包 .app + 运行
+│   └── README.md
+└── tauri-version/                      # Tauri 版本（已归档）
+    └── ...
 ```
 
-## IPC 命令
+## 关键设计决策
 
-| 命令 | 参数 | 说明 |
-|------|------|------|
-| `capture_region` | `region: {x, y, width, height}`, `save_to_file?: string` | 区域截图 → 剪贴板 |
-| `capture_fullscreen` | `save_to_file?: string` | 全屏截图 → 剪贴板 |
-| `close_capture_window` | 无 | 取消选区，退出选区模式 |
-| `get_debug_log_path` | 无 | 返回调试日志文件路径 |
-| `log_from_frontend` | `message: string` | 前端写入调试日志 |
+| 决策 | 原因 |
+|------|------|
+| 选屏时不激活 app（不调用 `NSApp.activate`） | 保持其他窗口的焦点状态，截图反映真实屏幕 |
+| `acceptsFirstMouse` 返回 true | 非活跃 app 时首次点击直接作为 mouseDown 传递 |
+| 选屏确认后立即截图，区域模式在静态图上裁剪 | 避免覆盖窗口被截入，确保截到实时屏幕内容 |
+| 窗口背景 `alpha: 0.001` 而非完全透明 | macOS 不向完全透明窗口传递鼠标事件 |
+| 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求 |
 
 ## 已知限制
 
-- **仅主显示器**：当前只截取 `CGDisplay::main()` 的内容，不支持多显示器选择
-- **屏幕录制权限**：首次使用需在「系统设置 → 隐私与安全性 → 屏幕录制」中授权
-- **开发模式 Dock 可见**：`LSUIElement` 仅在打包后的 `.app` 中生效，`tauri dev` 运行时 Dock 仍会显示图标
-- **保存到文件**：后端已支持 `save_to_file` 参数，但前端 UI（保存对话框/路径选择）尚未实现
-- **选区 UI 会被截入的规避**：截图前隐藏所有蒙版/选区框/提示信息，并延迟等待合成器更新
+- **屏幕录制权限**：首次使用需在「系统设置 → 隐私与安全性 → 屏幕录制」中手动添加 app 并授权
+- **开发模式 Dock 可见**：`LSUIElement` 在 run.sh 打包的 .app 中生效；直接运行二进制时 Dock 可能显示图标
+- **选屏阶段不支持键盘**：为避免 `NSApp.activate` 改变活跃窗口状态，选屏仅通过鼠标操作
+- **保存到文件**：尚未实现，当前仅写入剪贴板
