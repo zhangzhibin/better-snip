@@ -73,10 +73,11 @@ function finish(cancel) {
   logToFile('finish(cancel=' + cancel + ') w=' + w + ' h=' + h);
   if (!cancel && w >= 2 && h >= 2) {
     const payload = { region: { x, y, width: w, height: h } };
-    // 先隐藏蒙版和选区框，避免被截入图；延迟一帧再截屏，确保合成器已更新
+    // 先隐藏蒙版、选区框、提示和选区信息，避免被截入图；延迟再截屏，确保合成器已更新
     if (overlay) overlay.style.display = 'none';
     if (box) box.style.display = 'none';
     if (hint) hint.style.visibility = 'hidden';
+    if (selectionInfo) selectionInfo.style.display = 'none';
     const doCapture = () => {
       logToFile('invoking capture_region');
       invoke('capture_region', payload).catch((err) => {
@@ -98,11 +99,13 @@ function enterCaptureMode() {
   mainView.style.display = 'none';
   captureView.classList.add('active');
   document.body.style.background = 'transparent';
+  // 重置选区坐标，避免显示上一次的选区框
+  startX = startY = currentX = currentY = 0;
+  if (box) { box.style.display = 'none'; box.style.left = box.style.top = box.style.width = box.style.height = ''; }
   // 每次进入选区时恢复蒙版/框/提示，避免上次截屏时隐藏后残留
   if (overlay) overlay.style.display = '';
-  if (box) box.style.display = '';
   if (hint) hint.style.visibility = '';
-  if (selectionInfo) { selectionInfo.classList.remove('visible'); selectionInfo.textContent = ''; }
+  if (selectionInfo) { selectionInfo.classList.remove('visible'); selectionInfo.style.display = ''; selectionInfo.textContent = ''; }
   // 等窗口完成 resize 后再启用选区，否则后续截图时 clientX/clientY 仍按旧窗口尺寸，导致选区错位
   setTimeout(initCapture, 150);
 }
@@ -184,10 +187,20 @@ async function doFullScreen() {
   }
 }
 
+function showShutterFlash() {
+  const el = document.getElementById('shutter-flash');
+  if (!el) return;
+  el.classList.remove('run');
+  el.offsetHeight; // reflow
+  el.classList.add('run');
+  setTimeout(() => el.classList.remove('run'), 550);
+}
+
 waitForTauri()
   .then(() => {
     listen('enter-capture-mode', enterCaptureMode);
     listen('exit-capture-mode', exitCaptureMode);
+    listen('show-flash', showShutterFlash);
     const btn = document.getElementById('btn-fullscreen');
     if (btn) btn.addEventListener('click', doFullScreen);
   })

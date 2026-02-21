@@ -1,9 +1,13 @@
-# Dependencies
-node_modules/
+# Tauri / Node
+tauri-version/node_modules/
+tauri-version/src-tauri/target/
+tauri-version/dist/
 
-# Build / Tauri
-src-tauri/target/
-dist/
+# Swift / Xcode
+swift-version/.build/
+swift-version/DerivedData/
+swift-version/*.xcodeproj/xcuserdata/
+swift-version/*.xcworkspace/xcuserdata/
 
 # IDE / OS
 .idea/

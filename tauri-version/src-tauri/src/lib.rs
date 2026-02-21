@@ -182,6 +182,13 @@ async fn capture_region(
         }
     }
 
+    // 快门一闪提示截图完成，再退出选区
+    let _ = app.emit_to(
+        tauri::EventTarget::WebviewWindow { label: MAIN_WINDOW_LABEL.to_string() },
+        "show-flash",
+        (),
+    );
+    let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(350))).await;
     exit_capture_mode(&app, &state);
     debug_log("capture_region ok");
     Ok(())
@@ -194,9 +201,9 @@ fn close_capture_window(app: tauri::AppHandle, state: State<'_, Mutex<Option<Mai
     exit_capture_mode(&app, &state);
 }
 
-/// 全屏截图：主显示器整屏截取 → 剪贴板，可选保存。用于验证截屏链路是否正常。
+/// 全屏截图：截屏 → 立即闪白 → 闪白期间写剪贴板/文件 → 隐藏窗口。
 #[tauri::command]
-async fn capture_fullscreen(save_to_file: Option<String>) -> Result<(), String> {
+async fn capture_fullscreen(app: tauri::AppHandle, save_to_file: Option<String>) -> Result<(), String> {
     let rect = main_display_rect();
     debug_log(&format!("capture_fullscreen rect {:?}", rect));
     let png_bytes = capture_region_png(rect).map_err(|e| {
@@ -204,23 +211,52 @@ async fn capture_fullscreen(save_to_file: Option<String>) -> Result<(), String> 
         debug_log(&msg);
         e
     })?;
+
+    // 截图完成后立即触发闪屏反馈（不等剪贴板写入）
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Ok(Some(mon)) = app.primary_monitor() {
+            let sz = mon.size();
+            let p = mon.position();
+            let _ = w.set_size(tauri::PhysicalSize::new(sz.width, sz.height));
+            let _ = w.set_position(tauri::PhysicalPosition::new(p.x, p.y));
+        }
+        let _ = w.show();
+        let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(50))).await;
+        let _ = app.emit_to(
+            tauri::EventTarget::WebviewWindow { label: MAIN_WINDOW_LABEL.to_string() },
+            "show-flash",
+            (),
+        );
+    }
+
+    // 闪屏动画期间并行写入剪贴板和文件
     #[cfg(target_os = "macos")]
     {
-        let img = image::load_from_memory(&png_bytes).map_err(|e| e.to_string())?;
-        let rgba = img.to_rgba8();
-        let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-        clipboard
-            .set_image(arboard::ImageData {
-                width: rgba.width() as usize,
-                height: rgba.height() as usize,
-                bytes: rgba.into_raw().into(),
-            })
-            .map_err(|e| e.to_string())?;
+        let png_clone = png_bytes.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let img = image::load_from_memory(&png_clone).ok()?;
+            let rgba = img.to_rgba8();
+            let mut clipboard = arboard::Clipboard::new().ok()?;
+            clipboard
+                .set_image(arboard::ImageData {
+                    width: rgba.width() as usize,
+                    height: rgba.height() as usize,
+                    bytes: rgba.into_raw().into(),
+                })
+                .ok()
+        })
+        .await;
     }
     if let Some(path) = save_to_file {
         if !path.is_empty() {
             let _ = tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, &png_bytes)).await;
         }
+    }
+
+    // 等闪屏动画完成后隐藏窗口
+    let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(450))).await;
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = w.hide();
     }
     debug_log("capture_fullscreen ok");
     Ok(())
@@ -345,6 +381,7 @@ pub fn run() {
         .setup(|app| {
             debug_log("app setup: logging to file");
             eprintln!("[mac-screenshot] debug log: {}", debug_log_path().display());
+
             // 显式设置主窗口图标（开发模式下 default_window_icon 可能因工作目录未解析到图标，需从可执行路径推算）
             if let Some(w) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 let icon_loaded = app
@@ -354,11 +391,12 @@ pub fn run() {
                 if !icon_loaded {
                     #[cfg(target_os = "macos")]
                     if let Ok(exe) = std::env::current_exe() {
+                        // 开发时 exe 在 target/debug/，图标在 src-tauri/icons/
                         let icons_dir = exe
                             .parent()
                             .and_then(|p| p.parent())
                             .and_then(|p| p.parent())
-                            .map(|p| p.join("icons"));
+                            .map(|p| p.join("src-tauri").join("icons"));
                         if let Some(dir) = icons_dir {
                             for name in ["128x128.png", "32x32.png", "icon.png"] {
                                 let path = dir.join(name);
@@ -386,9 +424,9 @@ pub fn run() {
             app.on_menu_event(move |app_handle, event| {
                 let id = event.id().as_ref();
                 if id == "capture_full" {
-                    let _app = app_handle.clone();
+                    let app = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = capture_fullscreen(None).await {
+                        if let Err(e) = capture_fullscreen(app, None).await {
                             eprintln!("capture_fullscreen: {}", e);
                         }
                     });
@@ -410,27 +448,37 @@ pub fn run() {
             let tray_menu = MenuBuilder::new(app)
                 .items(&[&tray_full, &tray_capture, &tray_quit])
                 .build()?;
-            let tray_icon = app.default_window_icon().cloned();
-            #[cfg(target_os = "macos")]
-            let tray_icon = tray_icon.or_else(|| {
-                std::env::current_exe().ok().and_then(|exe| {
-                    let icons_dir = exe
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .and_then(|p| p.parent())
-                        .map(|p| p.join("icons"));
-                    icons_dir.and_then(|dir| {
-                        ["32x32.png", "128x128.png", "icon.png"]
-                            .iter()
-                            .find_map(|name| {
-                                let path = dir.join(name);
-                                (path.exists())
-                                    .then(|| tauri::image::Image::from_path(&path).ok())
-                                    .flatten()
+            let tray_icon = app
+                .default_window_icon()
+                .cloned()
+                .or_else(|| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        std::env::current_exe().ok().and_then(|exe| {
+                            let icons_dir = exe
+                                .parent()
+                                .and_then(|p| p.parent())
+                                .and_then(|p| p.parent())
+                                .map(|p| p.join("src-tauri").join("icons"));
+                            icons_dir.and_then(|dir| {
+                                ["32x32.png", "128x128.png", "icon.png"]
+                                    .iter()
+                                    .find_map(|name| {
+                                        let path = dir.join(name);
+                                        (path.exists())
+                                            .then(|| tauri::image::Image::from_path(&path).ok())
+                                            .flatten()
+                                    })
                             })
-                    })
+                        })
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    None
                 })
-            });
+                .or_else(|| {
+                    // 兜底：编译期嵌入图标，确保任何环境下都有托盘图标
+                    tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).ok()
+                });
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .tooltip("Mac Screenshot");
@@ -441,9 +489,9 @@ pub fn run() {
                 .on_menu_event(move |app_handle, event| {
                     match event.id().as_ref() {
                         "tray_full" => {
-                            let _app = app_handle.clone();
+                            let app = app_handle.clone();
                             tauri::async_runtime::spawn(async move {
-                                if let Err(e) = capture_fullscreen(None).await {
+                                if let Err(e) = capture_fullscreen(app, None).await {
                                     eprintln!("tray capture_fullscreen: {}", e);
                                 }
                             });

@@ -58,6 +58,24 @@
       display: none;
     }
     #capture-view #selection-info.visible { display: block; }
+    /* 截图完成快门一闪：柔和闪白，快亮慢收；显示时占位并保持默认光标，避免出现 I 形输入光标 */
+    #shutter-flash {
+      position: fixed; inset: 0;
+      background: #fff;
+      pointer-events: none;
+      z-index: 99999;
+      opacity: 0;
+      cursor: default;
+    }
+    #shutter-flash.run {
+      pointer-events: auto;
+      animation: shutter-flash 0.5s cubic-bezier(0.2, 0, 0.15, 1) forwards;
+    }
+    @keyframes shutter-flash {
+      0% { opacity: 0; }
+      12% { opacity: 0.7; }
+      100% { opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -65,6 +83,7 @@
     <p style="margin-bottom: 8px;">Menu: Screenshot → Capture Full Screen / Capture Region</p>
     <button type="button" id="btn-fullscreen">Full Screen</button>
   </div>
+  <div id="shutter-flash" aria-hidden="true"></div>
   <div id="capture-view">
     <div id="overlay"></div>
     <div id="box"></div>
