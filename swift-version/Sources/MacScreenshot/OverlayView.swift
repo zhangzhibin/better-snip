@@ -4,8 +4,8 @@ class OverlayView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    private let displayID: CGDirectDisplayID
-    private var onCapture: (CGDirectDisplayID, CGRect) -> Void
+    private let backgroundImage: CGImage
+    private var onCrop: (CGRect) -> Void
     private var onCancel: () -> Void
     private var startPoint: NSPoint = .zero
     private var currentPoint: NSPoint = .zero
@@ -20,9 +20,9 @@ class OverlayView: NSView {
         )
     }
 
-    init(frame: NSRect, displayID: CGDirectDisplayID, onCapture: @escaping (CGDirectDisplayID, CGRect) -> Void, onCancel: @escaping () -> Void) {
-        self.displayID = displayID
-        self.onCapture = onCapture
+    init(frame: NSRect, backgroundImage: CGImage, onCrop: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
+        self.backgroundImage = backgroundImage
+        self.onCrop = onCrop
         self.onCancel = onCancel
         super.init(frame: frame)
         let area = NSTrackingArea(
@@ -47,6 +47,17 @@ class OverlayView: NSView {
     // MARK: - 绘制
 
     override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+
+        // 绘制截图背景（铺满整个 view）
+        ctx.saveGState()
+        // isFlipped=true 时 CGContext 的 Y 轴需要翻转才能正确绘制 CGImage
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(backgroundImage, in: bounds)
+        ctx.restoreGState()
+
+        // 全屏半透明蒙版
         NSColor(white: 0, alpha: 0.35).setFill()
         bounds.fill()
 
@@ -54,14 +65,22 @@ class OverlayView: NSView {
             let sel = selectionRect
             guard sel.width > 0, sel.height > 0 else { return }
 
-            NSColor.clear.setFill()
-            sel.fill(using: .copy)
+            // 选区内：清除蒙版，显示原图
+            ctx.saveGState()
+            ctx.translateBy(x: 0, y: bounds.height)
+            ctx.scaleBy(x: 1, y: -1)
+            let flippedSel = CGRect(x: sel.origin.x, y: bounds.height - sel.origin.y - sel.height, width: sel.width, height: sel.height)
+            ctx.clip(to: flippedSel)
+            ctx.draw(backgroundImage, in: bounds)
+            ctx.restoreGState()
 
+            // 白色边框
             NSColor.white.setStroke()
             let border = NSBezierPath(rect: sel)
             border.lineWidth = 2
             border.stroke()
 
+            // 外侧阴影边框
             NSColor(white: 0, alpha: 0.5).setStroke()
             let shadow = NSBezierPath(rect: sel.insetBy(dx: -1, dy: -1))
             shadow.lineWidth = 1
@@ -78,7 +97,6 @@ class OverlayView: NSView {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.white,
-            .backgroundColor: NSColor(white: 0, alpha: 0.65),
         ]
         let size = (text as NSString).size(withAttributes: attrs)
         let origin = NSPoint(x: rect.minX + 8, y: rect.minY + 8)
@@ -119,7 +137,7 @@ class OverlayView: NSView {
         isDragging = false
         let sel = selectionRect
         if sel.width >= 2, sel.height >= 2 {
-            onCapture(displayID, sel)
+            onCrop(sel)
         } else {
             onCancel()
         }
@@ -137,7 +155,7 @@ class OverlayView: NSView {
                 isDragging = false
                 let sel = selectionRect
                 if sel.width >= 2, sel.height >= 2 {
-                    onCapture(displayID, sel)
+                    onCrop(sel)
                     return
                 }
             }

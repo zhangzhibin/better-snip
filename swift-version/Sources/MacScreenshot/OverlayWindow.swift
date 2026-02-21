@@ -1,11 +1,8 @@
 import Cocoa
 
 class OverlayWindow: NSWindow {
-    let displayID: CGDirectDisplayID
-
-    /// onCapture 回调传出 (displayID, 选区rect)
-    init(screen: NSScreen, onCapture: @escaping (CGDirectDisplayID, CGRect) -> Void, onCancel: @escaping () -> Void) {
-        self.displayID = ScreenCapture.displayID(for: screen)
+    /// backgroundImage: 已截取的全屏 CGImage，作为选区背景
+    init(screen: NSScreen, backgroundImage: CGImage, onCrop: @escaping (CGRect) -> Void, onCancel: @escaping () -> Void) {
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,
@@ -20,8 +17,8 @@ class OverlayWindow: NSWindow {
 
         let overlay = OverlayView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
-            displayID: self.displayID,
-            onCapture: onCapture,
+            backgroundImage: backgroundImage,
+            onCrop: onCrop,
             onCancel: onCancel
         )
         self.contentView = overlay
