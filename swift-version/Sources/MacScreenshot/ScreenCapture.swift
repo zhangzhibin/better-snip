@@ -18,6 +18,18 @@ enum ScreenCapture {
         return writeToClipboard(cgImage)
     }
 
+    /// 从已有 CGImage 中裁剪区域，返回裁剪后的 CGImage
+    static func cropImage(_ image: CGImage, rect: CGRect, scale: CGFloat) -> CGImage? {
+        let pixelRect = CGRect(
+            x: rect.origin.x * scale,
+            y: rect.origin.y * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
+        ).integral
+        guard pixelRect.width >= 2, pixelRect.height >= 2 else { return nil }
+        return image.cropping(to: pixelRect)
+    }
+
     /// 从已有 CGImage 中裁剪区域并写入剪贴板
     /// rect 为 points 坐标，内部乘以 scale 转为像素坐标
     @discardableResult

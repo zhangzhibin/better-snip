@@ -2,7 +2,7 @@
 
 ## 概述
 
-极简 macOS 截图工具。应用启动后仅在系统菜单栏显示托盘图标，通过托盘菜单触发全屏、区域或窗口截图，截图结果写入系统剪贴板。
+极简 macOS 截图工具。应用启动后仅在系统菜单栏显示托盘图标，通过托盘菜单触发全屏、区域或窗口截图，截图完成后打开标记编辑器进行标注，最终结果写入系统剪贴板。
 
 - **平台**：macOS 12+
 - **技术栈**：Swift + AppKit + Core Graphics
@@ -12,9 +12,10 @@
 
 | 功能 | 说明 |
 |------|------|
-| 全屏截图 | 选屏 → 立即截取整屏 → 写入剪贴板 |
-| 区域截图 | 选屏 → 立即截取整屏 → 在静态截图上拖选裁剪 → 写入剪贴板 |
-| 窗口截图 | 鼠标悬停高亮窗口（蓝色边框）→ 点击截取完整窗口（含阴影）→ 写入剪贴板 |
+| 全屏截图 | 选屏 → 立即截取整屏 → 标记编辑器 → 写入剪贴板 |
+| 区域截图 | 选屏 → 立即截取整屏 → 在静态截图上拖选裁剪 → 标记编辑器 → 写入剪贴板 |
+| 窗口截图 | 鼠标悬停高亮窗口（蓝色边框）→ 点击截取完整窗口（含阴影）→ 标记编辑器 → 写入剪贴板 |
+| 标记编辑器 | 截图后弹出，支持箭头/矩形/椭圆/直线/手绘/文字标注，可调颜色/线宽/字体，支持选中/移动/缩放/删除，关闭时合成覆盖剪贴板 |
 | 多屏幕支持 | 鼠标移动选屏（红色边框提示），点击确认目标屏幕 |
 | 系统托盘 | 菜单栏右侧图标，菜单项：Full Screen / Region / Window / Quit |
 | 闪屏反馈 | 截图成功后在目标屏幕显示白色闪光（模拟快门） |
@@ -36,6 +37,10 @@ flowchart LR
     Crop --> Clipboard
     WinCap --> Clipboard
     Clipboard --> Flash["FlashWindow\n目标屏幕闪屏"]
+    Flash --> Editor["AnnotationEditorWindow\n标记编辑器"]
+    Editor -->|"有标记"| Composite["合成渲染 → 覆盖剪贴板"]
+    Editor -->|"无标记"| Done["结束"]
+    Composite --> Done
 ```
 
 ## 交互流程
@@ -51,8 +56,7 @@ flowchart LR
 
 5. 关闭所有选屏窗口
 6. 立即 `CGDisplayCreateImage(displayID)` 截取目标屏幕
-7. 写入剪贴板（TIFF + PNG 双格式）
-8. 在目标屏幕显示闪屏动画
+7. 写入剪贴板（TIFF + PNG 双格式）→ 闪屏 → 打开标记编辑器
 
 ### 区域截图
 
@@ -61,7 +65,7 @@ flowchart LR
 7. 在目标屏幕打开 OverlayWindow，以截取的图片作为背景
 8. 用户拖拽选区（选区外半透明蒙版，选区内显示原图）
 9. 松开鼠标：`cgImage.cropping(to: scaledRect)` 裁剪
-10. 写入剪贴板 → 闪屏
+10. 写入剪贴板 → 闪屏 → 打开标记编辑器
 11. 按 Esc 取消
 
 > 区域截图本质上是全屏截图的裁剪操作。截图在选屏确认时已完成，用户在静态图上拖选，确保截到的是真实屏幕内容（包括活跃窗口状态、菜单栏等）。
@@ -70,9 +74,29 @@ flowchart LR
 
 5. 关闭所有选屏窗口
 6. `CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, [.bestResolution])` 截取目标窗口（含阴影）
-7. 写入剪贴板 → 闪屏
+7. 写入剪贴板 → 闪屏 → 打开标记编辑器
 
 > 窗口检测使用 `CGWindowListCopyWindowInfo` 获取屏幕上所有可见窗口列表（按 Z 序排列），过滤掉自身 PID 和非普通窗口（layer != 0），取第一个包含鼠标位置的窗口。
+
+### 标记编辑器
+
+截图完成后自动打开标记编辑器窗口（`AnnotationEditorWindow`）：
+
+1. 窗口尺寸适配截图大小，限制不超过屏幕 80%
+2. 顶部工具栏（`AnnotationToolbar`）：
+   - 工具：箭头 / 矩形 / 椭圆 / 直线 / 手绘 / 文字
+   - 颜色：红 / 蓝 / 绿 / 黄 / 黑 / 白
+   - 线宽：细(1) / 中(2.5) / 粗(5)
+   - 文字选项（文字工具激活时）：字体（System/Mono/Serif）、字号（12/16/24/36）、粗体/斜体
+   - Undo + Done 按钮
+3. 画布（`AnnotationCanvas`，`isFlipped = true`）：
+   - 背景为截图原图
+   - 鼠标交互状态机：idle → drawing / selected → moving / resizing / editingText
+   - 选中标记显示 8 个缩放手柄，支持拖动缩放
+   - Delete 键删除选中标记，Cmd+Z 撤销
+4. 关闭窗口时：若有标记，在原图像素坐标中渲染合成图并覆盖剪贴板；无标记则保留原图
+
+> 合成渲染使用与原图同尺寸的 `CGContext`，先绘制原图，再按缩放因子将标记绘制到像素空间。`NSGraphicsContext` 使用 `flipped: true` 确保文字方向正确。
 
 ## 坐标系
 
@@ -98,7 +122,11 @@ mac-screenshot/
 │   │   ├── WindowPicker.swift          # 窗口检测（CGWindowListCopyWindowInfo）+ 截取
 │   │   ├── OverlayWindow.swift         # 区域选区窗口（背景为已截图片）
 │   │   ├── OverlayView.swift           # 选区绘制（蒙版 + 拖拽 + 尺寸信息）
-│   │   └── FlashWindow.swift           # 截图成功闪屏
+│   │   ├── FlashWindow.swift           # 截图成功闪屏
+│   │   ├── Annotation.swift            # 标记数据模型 + 绘制/命中检测
+│   │   ├── AnnotationToolbar.swift     # 标记工具栏 UI
+│   │   ├── AnnotationCanvas.swift      # 标记画布交互（绘制/选中/移动/缩放/文字编辑）
+│   │   └── AnnotationEditorWindow.swift # 标记编辑器窗口 + 合成渲染
 │   ├── run.sh                          # 编译 + 打包 .app + 运行
 │   └── README.md
 └── tauri-version/                      # Tauri 版本（已归档）
@@ -116,6 +144,8 @@ mac-screenshot/
 | 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求 |
 | 窗口截图使用 `CGWindowListCreateImage` | 单独截取指定窗口（含阴影），不受其他窗口遮挡影响 |
 | 窗口检测过滤 layer != 0 | 只选择普通窗口，排除菜单栏、Dock 等系统 UI |
+| 编辑器窗口临时切换 `.regular` 激活策略 | agent app（`.accessory`）无法正常显示窗口，编辑器打开时切 `.regular`，关闭时切回 |
+| 合成渲染 `NSGraphicsContext(flipped: true)` | 确保文字绘制方向与 canvas 一致，避免手动 Y 翻转导致文字上下颠倒 |
 
 ## 已知限制
 

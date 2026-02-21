@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentMode: CaptureMode = .fullScreen
     /// 窗口模式下当前检测到的窗口
     private var detectedWindow: WindowInfo?
+    private var editorWindow: AnnotationEditorWindow?
 
     func setupTray() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -148,19 +149,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch mode {
         case .fullScreen:
             guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-            if ScreenCapture.writeToClipboard(fullImage) {
-                FlashWindow.show(on: screen)
-            }
+            openEditor(image: fullImage, on: screen)
         case .region:
             guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
             openRegionOverlay(screen: screen, capturedImage: fullImage)
         case .window:
             guard let info = savedWindow,
                   let cgImage = WindowPicker.captureWindow(windowID: info.windowID) else { return }
-            if ScreenCapture.writeToClipboard(cgImage) {
-                let targetScreen = NSScreen.screens.first { $0.frame.contains(WindowPicker.quartzToAppKit(rect: info.bounds).origin) } ?? screen
-                FlashWindow.show(on: targetScreen)
-            }
+            let targetScreen = NSScreen.screens.first { $0.frame.contains(WindowPicker.quartzToAppKit(rect: info.bounds).origin) } ?? screen
+            openEditor(image: cgImage, on: targetScreen)
         }
     }
 
@@ -182,9 +179,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let overlay = OverlayWindow(screen: screen, backgroundImage: capturedImage, onCrop: { [weak self] rect in
             self?.closeAllOverlays()
-            if ScreenCapture.cropAndWrite(image: capturedImage, rect: rect, scale: scale) {
-                FlashWindow.show(on: screen)
-            }
+            guard let cropped = ScreenCapture.cropImage(capturedImage, rect: rect, scale: scale) else { return }
+            self?.openEditor(image: cropped, on: screen)
         }, onCancel: { [weak self] in
             self?.closeAllOverlays()
         })
@@ -195,6 +191,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func closeAllOverlays() {
         for w in overlayWindows { w.close() }
         overlayWindows.removeAll()
+    }
+
+    // MARK: - 标记编辑器
+
+    private func openEditor(image: CGImage, on screen: NSScreen) {
+        if ScreenCapture.writeToClipboard(image) {
+            FlashWindow.show(on: screen)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self = self else { return }
+            NSLog("[AppDelegate] openEditor: creating editor window")
+            let editor = AnnotationEditorWindow(image: image, screen: screen)
+            editor.onClose = { [weak self] in
+                self?.editorWindow = nil
+                NSApp.setActivationPolicy(.accessory)
+            }
+            self.editorWindow = editor
+            // agent app 需要临时切换为 regular 才能正常显示窗口
+            NSApp.setActivationPolicy(.regular)
+            editor.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            NSLog("[AppDelegate] openEditor: window displayed")
+        }
     }
 
     // MARK: - 退出
