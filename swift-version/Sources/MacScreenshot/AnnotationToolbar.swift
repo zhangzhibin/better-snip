@@ -22,8 +22,8 @@ class AnnotationToolbar: NSView {
     private(set) var currentFontSize: CGFloat = 16
 
     private var toolButtons: [NSButton] = []
-    private var colorButtons: [NSButton] = []
-    private var widthButtons: [NSButton] = []
+    private var colorPopup: NSPopUpButton!
+    private var widthPopup: NSPopUpButton!
     private var textOptionsStack: NSStackView!
 
     override var isFlipped: Bool { true }
@@ -73,34 +73,37 @@ class AnnotationToolbar: NSView {
 
         mainStack.addArrangedSubview(makeSeparator())
 
-        // 颜色
-        let colors: [(NSColor, String)] = [
+        // 颜色下拉列表
+        colorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        colorPopup.controlSize = .small
+        let colorItems: [(NSColor, String)] = [
             (.systemRed, "Red"), (.systemBlue, "Blue"), (.systemGreen, "Green"),
             (.systemYellow, "Yellow"), (.black, "Black"), (.white, "White"),
         ]
-        for (color, name) in colors {
-            let btn = makeColorButton(color: color, name: name)
-            btn.action = #selector(colorTapped(_:))
-            btn.target = self
-            colorButtons.append(btn)
-            mainStack.addArrangedSubview(btn)
+        for (color, name) in colorItems {
+            let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+            item.image = makeColorSwatch(color: color, size: 14)
+            colorPopup.menu?.addItem(item)
         }
+        colorPopup.target = self
+        colorPopup.action = #selector(colorChanged(_:))
+        mainStack.addArrangedSubview(colorPopup)
 
         mainStack.addArrangedSubview(makeSeparator())
 
-        // 线宽
-        let widths: [(CGFloat, String)] = [(1, "Thin"), (2.5, "Med"), (5, "Thick")]
-        for (i, (_, label)) in widths.enumerated() {
-            let btn = NSButton(title: label, target: self, action: #selector(widthTapped(_:)))
-            btn.bezelStyle = .recessed
-            btn.setButtonType(.onOff)
-            btn.tag = i
-            btn.state = (i == 1) ? .on : .off
-            btn.controlSize = .small
-            btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
-            widthButtons.append(btn)
-            mainStack.addArrangedSubview(btn)
+        // 线宽下拉列表
+        widthPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        widthPopup.controlSize = .small
+        let widthItems: [(CGFloat, String)] = [(1, "Thin"), (2.5, "Medium"), (5, "Thick")]
+        for (width, label) in widthItems {
+            let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+            item.image = makeLineIcon(width: width, canvasSize: NSSize(width: 28, height: 16))
+            widthPopup.menu?.addItem(item)
         }
+        widthPopup.selectItem(at: 1)
+        widthPopup.target = self
+        widthPopup.action = #selector(widthChanged(_:))
+        mainStack.addArrangedSubview(widthPopup)
 
         mainStack.addArrangedSubview(makeSeparator())
 
@@ -150,20 +153,19 @@ class AnnotationToolbar: NSView {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         mainStack.addArrangedSubview(spacer)
 
-        // Undo + Done
-        let undoBtn = NSButton(title: "Undo", target: self, action: #selector(undoTapped))
-        undoBtn.bezelStyle = .recessed
-        undoBtn.controlSize = .small
-        mainStack.addArrangedSubview(undoBtn)
+        // 关闭（丢弃）+ 保存
+        let closeBtn = makeIconButton(symbol: "xmark.circle", fallback: "✕", tooltip: "Discard & Close")
+        closeBtn.target = self
+        closeBtn.action = #selector(undoTapped)
+        mainStack.addArrangedSubview(closeBtn)
 
-        let doneBtn = NSButton(title: "Done", target: self, action: #selector(doneTapped))
-        doneBtn.bezelStyle = .rounded
-        doneBtn.controlSize = .small
-        doneBtn.keyEquivalent = "\r"
-        mainStack.addArrangedSubview(doneBtn)
+        let saveBtn = makeIconButton(symbol: "square.and.arrow.down", fallback: "↓", tooltip: "Save & Close")
+        saveBtn.target = self
+        saveBtn.action = #selector(doneTapped)
+        saveBtn.keyEquivalent = "\r"
+        mainStack.addArrangedSubview(saveBtn)
 
         updateToolSelection()
-        updateColorSelection()
     }
 
     // MARK: - Actions
@@ -178,22 +180,22 @@ class AnnotationToolbar: NSView {
         }
     }
 
-    @objc private func colorTapped(_ sender: NSButton) {
+    @objc private func colorChanged(_ sender: NSPopUpButton) {
         let colors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .black, .white]
-        if let idx = colorButtons.firstIndex(of: sender), idx < colors.count {
+        let idx = sender.indexOfSelectedItem
+        if idx < colors.count {
             currentColor = colors[idx]
-            updateColorSelection()
             delegate?.toolbarDidSelectColor(currentColor)
         }
     }
 
-    @objc private func widthTapped(_ sender: NSButton) {
+    @objc private func widthChanged(_ sender: NSPopUpButton) {
         let widths: [CGFloat] = [1, 2.5, 5]
-        for (i, btn) in widthButtons.enumerated() {
-            btn.state = (btn == sender) ? .on : .off
-            if btn == sender, i < widths.count { currentLineWidth = widths[i] }
+        let idx = sender.indexOfSelectedItem
+        if idx < widths.count {
+            currentLineWidth = widths[idx]
+            delegate?.toolbarDidSelectLineWidth(currentLineWidth)
         }
-        delegate?.toolbarDidSelectLineWidth(currentLineWidth)
     }
 
     @objc private func fontChanged(_ sender: NSPopUpButton) {
@@ -228,14 +230,6 @@ class AnnotationToolbar: NSView {
         }
     }
 
-    private func updateColorSelection() {
-        let colors: [NSColor] = [.systemRed, .systemBlue, .systemGreen, .systemYellow, .black, .white]
-        for (i, btn) in colorButtons.enumerated() {
-            btn.layer?.borderWidth = (i < colors.count && colors[i] == currentColor) ? 2 : 0
-            btn.layer?.borderColor = NSColor.controlAccentColor.cgColor
-        }
-    }
-
     // MARK: - Helpers
 
     private func makeToolButton(symbol: String, fallback: String, tag: Int) -> NSButton {
@@ -253,18 +247,50 @@ class AnnotationToolbar: NSView {
         return btn
     }
 
-    private func makeColorButton(color: NSColor, name: String) -> NSButton {
-        let btn = NSButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
-        btn.wantsLayer = true
-        btn.layer?.backgroundColor = color.cgColor
-        btn.layer?.cornerRadius = 10
-        btn.layer?.masksToBounds = true
-        btn.isBordered = false
-        btn.title = ""
-        btn.toolTip = name
-        btn.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        btn.heightAnchor.constraint(equalToConstant: 20).isActive = true
+    private func makeIconButton(symbol: String, fallback: String, tooltip: String) -> NSButton {
+        let btn: NSButton
+        if #available(macOS 11.0, *), let img = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip) {
+            btn = NSButton(image: img, target: nil, action: nil)
+        } else {
+            btn = NSButton(title: fallback, target: nil, action: nil)
+        }
+        btn.bezelStyle = .recessed
+        btn.controlSize = .small
+        btn.toolTip = tooltip
+        btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
         return btn
+    }
+
+    /// 生成颜色色块图标
+    private func makeColorSwatch(color: NSColor, size: CGFloat) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size))
+        img.lockFocus()
+        color.setFill()
+        let path = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: size - 2, height: size - 2))
+        path.fill()
+        if color == .white || color == .systemYellow {
+            NSColor.separatorColor.setStroke()
+            path.lineWidth = 0.5
+            path.stroke()
+        }
+        img.unlockFocus()
+        return img
+    }
+
+    /// 生成线宽示意图标
+    private func makeLineIcon(width: CGFloat, canvasSize: NSSize) -> NSImage {
+        let img = NSImage(size: canvasSize)
+        img.lockFocus()
+        NSColor.labelColor.setStroke()
+        let path = NSBezierPath()
+        let y = canvasSize.height / 2
+        path.move(to: NSPoint(x: 2, y: y))
+        path.line(to: NSPoint(x: canvasSize.width - 2, y: y))
+        path.lineWidth = width
+        path.lineCapStyle = .round
+        path.stroke()
+        img.unlockFocus()
+        return img
     }
 
     private func makeSeparator() -> NSView {

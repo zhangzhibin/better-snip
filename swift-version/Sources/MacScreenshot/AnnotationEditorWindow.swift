@@ -118,13 +118,16 @@ class AnnotationEditorWindow: NSWindow {
         return ctx.makeImage()
     }
 
-    private func closeEditor() {
-        if !canvas.annotations.isEmpty {
-            if let composite = renderCompositeImage() {
-                _ = ScreenCapture.writeToClipboard(composite)
-            }
-        }
-        onClose?()
+    private var shouldSave = false
+
+    private func saveAndClose() {
+        shouldSave = true
+        close()
+    }
+
+    private func discardAndClose() {
+        shouldSave = false
+        close()
     }
 }
 
@@ -132,7 +135,12 @@ class AnnotationEditorWindow: NSWindow {
 
 extension AnnotationEditorWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        closeEditor()
+        if shouldSave, !canvas.annotations.isEmpty {
+            if let composite = renderCompositeImage() {
+                _ = ScreenCapture.writeToClipboard(composite)
+            }
+        }
+        onClose?()
     }
 }
 
@@ -168,10 +176,10 @@ extension AnnotationEditorWindow: AnnotationToolbarDelegate {
     }
 
     func toolbarDidUndo() {
-        canvas.undo()
+        discardAndClose()
     }
 
     func toolbarDidDone() {
-        close()
+        saveAndClose()
     }
 }
