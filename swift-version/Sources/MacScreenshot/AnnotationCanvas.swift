@@ -8,6 +8,18 @@ enum ResizeHandle: Int, CaseIterable {
     case bottomLeft, bottomCenter, bottomRight
 }
 
+/// 用于标注文字编辑，支持 Esc 取消
+private final class TextEditField: NSTextField {
+    var onEscape: (() -> Void)?
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // Escape
+            onEscape?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 class AnnotationCanvas: NSView {
 
     // MARK: - 公共属性
@@ -23,6 +35,9 @@ class AnnotationCanvas: NSView {
     var currentFontSize: CGFloat = 16
     var isBold: Bool = false
     var isItalic: Bool = false
+    var currentDashPattern: [CGFloat] = []
+    /// Esc 取消文字编辑时请求切换工具
+    var onToolChangeRequested: ((AnnotationTool) -> Void)?
 
     // MARK: - 状态
 
@@ -38,6 +53,7 @@ class AnnotationCanvas: NSView {
     private var state: State = .idle
     private var drawingAnnotation: Annotation?
     private var textField: NSTextField?
+    private var textEditKeyMonitor: Any?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -278,11 +294,17 @@ class AnnotationCanvas: NSView {
             return
         }
         if event.keyCode == 53 { // Escape
+            if case .editingText(let ann) = state {
+                cancelTextEditing(ann)
+                return
+            }
             if case .selected = state {
                 state = .idle
                 setNeedsDisplay(bounds)
                 return
             }
+            onToolChangeRequested?(.arrow)
+            return
         }
         super.keyDown(with: event)
     }
@@ -330,8 +352,17 @@ class AnnotationCanvas: NSView {
     private func startTextEditing(_ annotation: Annotation) {
         state = .editingText(annotation)
 
+        textEditKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            if event.keyCode == 53, case .editingText(let ann) = self.state {
+                self.cancelTextEditing(ann)
+                return nil
+            }
+            return event
+        }
+
         let frame = annotation.frame
-        let tf = NSTextField(frame: NSRect(
+        let tf = TextEditField(frame: NSRect(
             x: frame.origin.x,
             y: frame.origin.y,
             width: max(frame.width, 120),
@@ -348,6 +379,10 @@ class AnnotationCanvas: NSView {
         tf.focusRingType = .default
         tf.target = self
         tf.action = #selector(textFieldAction(_:))
+        tf.onEscape = { [weak self] in
+            guard let self = self, case .editingText(let ann) = self.state else { return }
+            self.cancelTextEditing(ann)
+        }
         addSubview(tf)
         window?.makeFirstResponder(tf)
         textField = tf
@@ -360,6 +395,7 @@ class AnnotationCanvas: NSView {
     }
 
     private func finishTextEditing(_ annotation: Annotation) {
+        removeTextEditKeyMonitor()
         if let tf = textField {
             annotation.text = tf.stringValue
             tf.removeFromSuperview()
@@ -371,6 +407,50 @@ class AnnotationCanvas: NSView {
             onAnnotationsChanged?()
         }
         state = .idle
+        setNeedsDisplay(bounds)
+    }
+
+    /// Esc 取消文字编辑：如果文字是默认值则删除
+    private func cancelTextEditing(_ annotation: Annotation) {
+        removeTextEditKeyMonitor()
+        if let tf = textField {
+            tf.removeFromSuperview()
+            textField = nil
+        }
+        if annotation.text == "Text" || annotation.text.isEmpty {
+            deleteAnnotation(annotation)
+        }
+        state = .idle
+        setNeedsDisplay(bounds)
+    }
+
+    private func removeTextEditKeyMonitor() {
+        if let monitor = textEditKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            textEditKeyMonitor = nil
+        }
+    }
+
+    /// 实时更新当前选中/编辑中标记的属性
+    func updateSelectedAnnotationStyle() {
+        switch state {
+        case .editingText(let ann):
+            ann.color = currentColor
+            ann.font = buildFont()
+            ann.isBold = isBold
+            ann.isItalic = isItalic
+            if let tf = textField { tf.font = ann.font; tf.textColor = ann.color }
+        case .selected(let ann):
+            ann.color = currentColor
+            ann.lineWidth = currentLineWidth
+            ann.dashPattern = currentDashPattern
+            if ann.tool == .text {
+                ann.font = buildFont()
+                ann.isBold = isBold
+                ann.isItalic = isItalic
+            }
+        default: return
+        }
         setNeedsDisplay(bounds)
     }
 
@@ -430,7 +510,7 @@ class AnnotationCanvas: NSView {
 
         // CIPixellate 像素化
         let ciImage = CIImage(cgImage: cropped)
-        let pixelScale = max(8, max(cropRect.width, cropRect.height) / 12)
+        let pixelScale = max(4, max(cropRect.width, cropRect.height) / 32)
         guard let filter = CIFilter(name: "CIPixellate") else { return }
         filter.setValue(ciImage, forKey: kCIInputImageKey)
         filter.setValue(pixelScale, forKey: kCIInputScaleKey)
@@ -486,6 +566,7 @@ class AnnotationCanvas: NSView {
         ann.font = buildFont()
         ann.isBold = isBold
         ann.isItalic = isItalic
+        ann.dashPattern = currentDashPattern
         return ann
     }
 

@@ -17,6 +17,8 @@ class Annotation {
     var isItalic: Bool = false
     var mosaicImage: CGImage?
     var brushWidth: CGFloat = 20
+    /// 虚线模式：空数组 = 实线
+    var dashPattern: [CGFloat] = []
 
     init(tool: AnnotationTool, color: NSColor, lineWidth: CGFloat) {
         self.tool = tool
@@ -94,10 +96,12 @@ class Annotation {
         case .rect:
             let path = NSBezierPath(rect: normalizedRect)
             path.lineWidth = lineWidth
+            applyDash(to: path, isShape: true)
             path.stroke()
         case .ellipse:
             let path = NSBezierPath(ovalIn: normalizedRect)
             path.lineWidth = lineWidth
+            applyDash(to: path, isShape: true)
             path.stroke()
         case .line:
             let path = NSBezierPath()
@@ -105,6 +109,7 @@ class Annotation {
             path.line(to: endPoint)
             path.lineWidth = lineWidth
             path.lineCapStyle = .round
+            applyDash(to: path, isShape: false)
             path.stroke()
         case .freehand:
             guard points.count >= 2 else { return }
@@ -114,6 +119,7 @@ class Annotation {
             path.lineWidth = lineWidth
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
+            applyDash(to: path, isShape: false)
             path.stroke()
         case .text:
             guard !text.isEmpty else { return }
@@ -148,23 +154,27 @@ class Annotation {
     }
 
     private func drawArrow() {
-        let path = NSBezierPath()
-        path.move(to: startPoint)
-        path.line(to: endPoint)
-        path.lineWidth = lineWidth
-        path.lineCapStyle = .round
-        path.stroke()
-
-        // 箭头三角形
         let dx = endPoint.x - startPoint.x
         let dy = endPoint.y - startPoint.y
         let length = sqrt(dx * dx + dy * dy)
         guard length > 0 else { return }
 
-        let arrowLen = max(lineWidth * 4, 12)
-        let arrowWidth = arrowLen * 0.5
+        let arrowLen = max(lineWidth * 5, 14)
+        let arrowWidth = arrowLen * 0.45
         let ux = dx / length, uy = dy / length
         let px = -uy, py = ux
+
+        // 三角形底边中点：线条终止于此，避免线头穿出箭尖
+        let baseCenter = NSPoint(x: endPoint.x - ux * arrowLen,
+                                 y: endPoint.y - uy * arrowLen)
+
+        let linePath = NSBezierPath()
+        linePath.move(to: startPoint)
+        linePath.line(to: baseCenter)
+        linePath.lineWidth = lineWidth
+        linePath.lineCapStyle = .round
+        applyDash(to: linePath, isShape: false)
+        linePath.stroke()
 
         let tip = endPoint
         let left = NSPoint(x: tip.x - ux * arrowLen + px * arrowWidth,
@@ -178,6 +188,14 @@ class Annotation {
         arrow.line(to: right)
         arrow.close()
         arrow.fill()
+    }
+
+    /// isShape: 矩形/椭圆用更大缩放，虚线段更明显
+    private func applyDash(to path: NSBezierPath, isShape: Bool) {
+        guard !dashPattern.isEmpty else { return }
+        let scale = (isShape ? 2.0 : 1.0) * max(1.0, lineWidth * 0.7)
+        let scaled = dashPattern.map { $0 * scale }
+        path.setLineDash(scaled, count: scaled.count, phase: 0)
     }
 
     // MARK: - 命中检测

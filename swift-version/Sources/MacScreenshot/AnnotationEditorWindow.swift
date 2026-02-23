@@ -42,6 +42,9 @@ class AnnotationEditorWindow: NSWindow {
         self.isReleasedWhenClosed = false
 
         canvas.backgroundImage = image
+        canvas.onToolChangeRequested = { [weak self] tool in
+            self?.annotationToolbar.selectTool(tool)
+        }
         annotationToolbar.delegate = self
 
         // 布局：顶部工具栏 + 下方画布（包裹在 ScrollView 中）
@@ -153,26 +156,37 @@ extension AnnotationEditorWindow: AnnotationToolbarDelegate {
 
     func toolbarDidSelectColor(_ color: NSColor) {
         canvas.currentColor = color
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidSelectLineWidth(_ width: CGFloat) {
         canvas.currentLineWidth = width
+        canvas.updateSelectedAnnotationStyle()
+    }
+
+    func toolbarDidSelectDashPattern(_ pattern: [CGFloat]) {
+        canvas.currentDashPattern = pattern
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidSelectFontName(_ name: String) {
         canvas.currentFontName = name
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidSelectFontSize(_ size: CGFloat) {
         canvas.currentFontSize = size
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidToggleBold() {
         canvas.isBold.toggle()
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidToggleItalic() {
         canvas.isItalic.toggle()
+        canvas.updateSelectedAnnotationStyle()
     }
 
     func toolbarDidUndo() {

@@ -6,6 +6,7 @@ protocol AnnotationToolbarDelegate: AnyObject {
     func toolbarDidSelectLineWidth(_ width: CGFloat)
     func toolbarDidSelectFontName(_ name: String)
     func toolbarDidSelectFontSize(_ size: CGFloat)
+    func toolbarDidSelectDashPattern(_ pattern: [CGFloat])
     func toolbarDidToggleBold()
     func toolbarDidToggleItalic()
     func toolbarDidUndo()
@@ -24,6 +25,7 @@ class AnnotationToolbar: NSView {
     private var toolButtons: [NSButton] = []
     private var colorPopup: NSPopUpButton!
     private var widthPopup: NSPopUpButton!
+    private var dashPopup: NSPopUpButton!
     private var textOptionsStack: NSStackView!
 
     override var isFlipped: Bool { true }
@@ -104,6 +106,24 @@ class AnnotationToolbar: NSView {
         widthPopup.target = self
         widthPopup.action = #selector(widthChanged(_:))
         mainStack.addArrangedSubview(widthPopup)
+
+        // 虚线样式下拉列表
+        dashPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        dashPopup.controlSize = .small
+        let dashStyles: [([CGFloat], String)] = [
+            ([], "Solid"),
+            ([8, 4], "Dashed"),
+            ([2, 4], "Dotted"),
+            ([8, 4, 2, 4], "Dash-Dot"),
+        ]
+        for (pattern, label) in dashStyles {
+            let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+            item.image = makeDashIcon(pattern: pattern, lineWidth: 2, canvasSize: NSSize(width: 36, height: 16))
+            dashPopup.menu?.addItem(item)
+        }
+        dashPopup.target = self
+        dashPopup.action = #selector(dashChanged(_:))
+        mainStack.addArrangedSubview(dashPopup)
 
         mainStack.addArrangedSubview(makeSeparator())
 
@@ -195,6 +215,14 @@ class AnnotationToolbar: NSView {
         if idx < widths.count {
             currentLineWidth = widths[idx]
             delegate?.toolbarDidSelectLineWidth(currentLineWidth)
+        }
+    }
+
+    @objc private func dashChanged(_ sender: NSPopUpButton) {
+        let patterns: [[CGFloat]] = [[], [8, 4], [2, 4], [8, 4, 2, 4]]
+        let idx = sender.indexOfSelectedItem
+        if idx < patterns.count {
+            delegate?.toolbarDidSelectDashPattern(patterns[idx])
         }
     }
 
@@ -291,6 +319,33 @@ class AnnotationToolbar: NSView {
         path.stroke()
         img.unlockFocus()
         return img
+    }
+
+    /// 生成虚线样式图标
+    private func makeDashIcon(pattern: [CGFloat], lineWidth: CGFloat, canvasSize: NSSize) -> NSImage {
+        let img = NSImage(size: canvasSize)
+        img.lockFocus()
+        NSColor.labelColor.setStroke()
+        let path = NSBezierPath()
+        let y = canvasSize.height / 2
+        path.move(to: NSPoint(x: 2, y: y))
+        path.line(to: NSPoint(x: canvasSize.width - 2, y: y))
+        path.lineWidth = lineWidth
+        path.lineCapStyle = .butt
+        if !pattern.isEmpty {
+            path.setLineDash(pattern, count: pattern.count, phase: 0)
+        }
+        path.stroke()
+        img.unlockFocus()
+        return img
+    }
+
+    /// 外部切换工具（如 Esc 切回箭头）
+    func selectTool(_ tool: AnnotationTool) {
+        currentTool = tool
+        updateToolSelection()
+        textOptionsStack.isHidden = (currentTool != .text)
+        delegate?.toolbarDidSelectTool(currentTool)
     }
 
     private func makeSeparator() -> NSView {
