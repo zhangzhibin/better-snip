@@ -1,0 +1,8 @@
+---
+description: 提交代码前，检查是否需要同步更新spec
+alwaysApply: false
+---
+
+# Spec
+
+提交代码前，检查是否需要同步更新spec
