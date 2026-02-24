@@ -93,7 +93,7 @@ flowchart LR
    - 背景为截图原图
    - 鼠标交互状态机：idle → drawing / selected → moving / resizing / editingText
    - 选中标记显示 8 个缩放手柄，支持拖动缩放
-   - Delete 键删除选中标记，Cmd+Z 撤销；Esc：编辑文字时取消编辑，有选中时取消选中，否则切回箭头工具（文字编辑时通过 keyDown 本地监控响应 Esc）
+   - Delete 键删除选中标记，Cmd+Z 撤销；Esc：编辑文字时取消编辑，有选中时取消选中，否则切回箭头工具（编辑态用 keyDown 本地监控；非编辑态、焦点在工具栏时用窗口级 key 监控，确保文字工具也能退回箭头）
 4. 关闭窗口时：若有标记，在原图像素坐标中渲染合成图并覆盖剪贴板；无标记则保留原图
 
 > 合成渲染使用与原图同尺寸的 `CGContext`，先绘制原图，再按缩放因子将标记绘制到像素空间。`NSGraphicsContext` 使用 `flipped: true` 确保文字方向正确。
