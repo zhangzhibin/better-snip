@@ -146,18 +146,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let savedWindow = detectedWindow
         closeAllPickers()
 
-        switch mode {
-        case .fullScreen:
-            guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-            openEditor(image: fullImage, on: screen)
-        case .region:
-            guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-            openRegionOverlay(screen: screen, capturedImage: fullImage)
-        case .window:
-            guard let info = savedWindow,
-                  let cgImage = WindowPicker.captureWindow(windowID: info.windowID) else { return }
-            let targetScreen = NSScreen.screens.first { $0.frame.contains(WindowPicker.quartzToAppKit(rect: info.bounds).origin) } ?? screen
-            openEditor(image: cgImage, on: targetScreen)
+        // 延后约 20ms（1-2 帧）再截屏，兼顾无红框与接近点击瞬间
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            guard let self = self else { return }
+            switch mode {
+            case .fullScreen:
+                guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
+                self.openEditor(image: fullImage, on: screen)
+            case .region:
+                guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
+                self.openRegionOverlay(screen: screen, capturedImage: fullImage)
+            case .window:
+                guard let info = savedWindow,
+                      let cgImage = WindowPicker.captureWindow(windowID: info.windowID) else { return }
+                let targetScreen = NSScreen.screens.first { $0.frame.contains(WindowPicker.quartzToAppKit(rect: info.bounds).origin) } ?? screen
+                self.openEditor(image: cgImage, on: targetScreen)
+            }
         }
     }
 
@@ -166,7 +170,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
-        for w in pickerWindows { w.close() }
+        for w in pickerWindows { w.orderOut(nil); w.close() }
         pickerWindows.removeAll()
         detectedWindow = nil
     }

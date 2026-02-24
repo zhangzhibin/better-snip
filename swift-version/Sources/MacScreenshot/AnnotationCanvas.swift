@@ -294,19 +294,24 @@ class AnnotationCanvas: NSView {
             return
         }
         if event.keyCode == 53 { // Escape
-            if case .editingText(let ann) = state {
-                cancelTextEditing(ann)
-                return
-            }
-            if case .selected = state {
-                state = .idle
-                setNeedsDisplay(bounds)
-                return
-            }
-            onToolChangeRequested?(.arrow)
+            performEscapeAction()
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// Esc 逻辑，可由 keyDown 或窗口级 key 监控调用
+    func performEscapeAction() {
+        if case .editingText(let ann) = state {
+            cancelTextEditing(ann)
+            return
+        }
+        if case .selected = state {
+            state = .idle
+            setNeedsDisplay(bounds)
+            return
+        }
+        onToolChangeRequested?(.arrow)
     }
 
     // MARK: - 缩放计算
@@ -508,9 +513,10 @@ class AnnotationCanvas: NSView {
         guard cropRect.width >= 2, cropRect.height >= 2,
               let cropped = bg.cropping(to: cropRect) else { return }
 
-        // CIPixellate 像素化
+        // CIPixellate 像素化：小范围用更大块使马赛克更明显（长边约 6 块）
         let ciImage = CIImage(cgImage: cropped)
-        let pixelScale = max(4, max(cropRect.width, cropRect.height) / 32)
+        let maxSide = max(cropRect.width, cropRect.height)
+        let pixelScale = max(4, maxSide / 6)
         guard let filter = CIFilter(name: "CIPixellate") else { return }
         filter.setValue(ciImage, forKey: kCIInputImageKey)
         filter.setValue(pixelScale, forKey: kCIInputScaleKey)

@@ -5,6 +5,7 @@ class AnnotationEditorWindow: NSWindow {
     private let originalImage: CGImage
     private let canvas: AnnotationCanvas
     private let annotationToolbar: AnnotationToolbar
+    private var escKeyMonitor: Any?
     var onClose: (() -> Void)?
 
     init(image: CGImage, screen: NSScreen) {
@@ -81,6 +82,17 @@ class AnnotationEditorWindow: NSWindow {
         canvas.setFrameSize(NSSize(width: imgW, height: imgH))
 
         self.delegate = self
+
+        // Esc 在非编辑态（如焦点在工具栏）时也能退回箭头工具
+        escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.isKeyWindow, event.keyCode == 53 else { return event }
+            self.canvas.performEscapeAction()
+            return nil
+        }
+    }
+
+    deinit {
+        if let m = escKeyMonitor { NSEvent.removeMonitor(m) }
     }
 
     /// 合成标记后的图像
