@@ -7,6 +7,7 @@ protocol AnnotationToolbarDelegate: AnyObject {
     func toolbarDidSelectFontName(_ name: String)
     func toolbarDidSelectFontSize(_ size: CGFloat)
     func toolbarDidSelectDashPattern(_ pattern: [CGFloat])
+    func toolbarDidSelectCropAspectRatio(_ ratio: CropAspectRatio?)
     func toolbarDidToggleBold()
     func toolbarDidToggleItalic()
     func toolbarDidUndo()
@@ -27,6 +28,7 @@ class AnnotationToolbar: NSView {
     private var widthPopup: NSPopUpButton!
     private var dashPopup: NSPopUpButton!
     private var textOptionsStack: NSStackView!
+    private var cropRatioPopup: NSPopUpButton!
 
     override var isFlipped: Bool { true }
 
@@ -64,6 +66,7 @@ class AnnotationToolbar: NSView {
             (.freehand, "pencil.tip", "Freehand"),
             (.text, "textformat", "Text"),
             (.mosaic, "square.grid.3x3.fill", "Mosaic"),
+            (.crop, "crop", "Crop"),
         ]
         for (tool, symbol, title) in tools {
             let btn = makeToolButton(symbol: symbol, fallback: title, tag: tool.hashValue)
@@ -168,6 +171,17 @@ class AnnotationToolbar: NSView {
         textOptionsStack.isHidden = true
         mainStack.addArrangedSubview(textOptionsStack)
 
+        // 裁剪比例（仅 crop 工具时显示）
+        cropRatioPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        cropRatioPopup.controlSize = .small
+        for ratio in CropAspectRatio.allCases {
+            cropRatioPopup.menu?.addItem(withTitle: ratio.displayName, action: nil, keyEquivalent: "")
+        }
+        cropRatioPopup.target = self
+        cropRatioPopup.action = #selector(cropRatioChanged(_:))
+        cropRatioPopup.isHidden = true
+        mainStack.addArrangedSubview(cropRatioPopup)
+
         // 弹性空间
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -196,8 +210,15 @@ class AnnotationToolbar: NSView {
             currentTool = tools[idx]
             updateToolSelection()
             textOptionsStack.isHidden = (currentTool != .text)
+            cropRatioPopup.isHidden = (currentTool != .crop)
             delegate?.toolbarDidSelectTool(currentTool)
         }
+    }
+
+    @objc private func cropRatioChanged(_ sender: NSPopUpButton) {
+        let ratios = CropAspectRatio.allCases
+        let idx = sender.indexOfSelectedItem
+        delegate?.toolbarDidSelectCropAspectRatio(idx < ratios.count ? ratios[idx] : nil)
     }
 
     @objc private func colorChanged(_ sender: NSPopUpButton) {
@@ -345,6 +366,7 @@ class AnnotationToolbar: NSView {
         currentTool = tool
         updateToolSelection()
         textOptionsStack.isHidden = (currentTool != .text)
+        cropRatioPopup.isHidden = (currentTool != .crop)
         delegate?.toolbarDidSelectTool(currentTool)
     }
 

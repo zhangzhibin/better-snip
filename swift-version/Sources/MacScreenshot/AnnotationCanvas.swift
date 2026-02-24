@@ -38,6 +38,10 @@ class AnnotationCanvas: NSView {
     var currentDashPattern: [CGFloat] = []
     /// Esc 取消文字编辑时请求切换工具
     var onToolChangeRequested: ((AnnotationTool) -> Void)?
+    /// 裁剪比例（crop 工具时生效）
+    var currentCropAspectRatio: CropAspectRatio = .free
+    /// 裁剪确认时回调，由窗口执行实际裁剪
+    var onApplyCrop: ((NSRect) -> Void)?
 
     // MARK: - 状态
 
@@ -54,6 +58,12 @@ class AnnotationCanvas: NSView {
     private var drawingAnnotation: Annotation?
     private var textField: NSTextField?
     private var textEditKeyMonitor: Any?
+    private var cropStartPoint: NSPoint?
+    private var cropCurrentPoint: NSPoint?
+    /// 裁剪预览态：选区已确定，等待确认
+    private var cropPreviewRect: NSRect?
+    /// 选区内拖动移动时的上一帧鼠标位置
+    private var cropMovingLastPoint: NSPoint?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -95,6 +105,98 @@ class AnnotationCanvas: NSView {
             drawHandles(for: ann)
         } else if case .resizing(let ann, _, _) = state {
             drawHandles(for: ann)
+        }
+
+        // 裁剪选区 overlay（拖拽中或预览态）
+        if let start = cropStartPoint, let current = cropCurrentPoint {
+            drawCropOverlay(rect: cropSelectionRect(start: start, current: current), isPreview: false)
+        } else if let rect = cropPreviewRect {
+            drawCropOverlay(rect: rect, isPreview: true)
+        }
+    }
+
+    private func cropSelectionRect(start: NSPoint, current: NSPoint) -> NSRect {
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+        guard let ratio = currentCropAspectRatio.value else {
+            return NSRect(
+                x: min(start.x, current.x),
+                y: min(start.y, current.y),
+                width: abs(dx),
+                height: abs(dy)
+            )
+        }
+        let rawW = abs(dx)
+        let rawH = abs(dy)
+        let w: CGFloat
+        let h: CGFloat
+        if rawW <= 0 && rawH <= 0 {
+            return NSRect(origin: start, size: .zero)
+        }
+        if rawW / max(rawH, 0.001) > ratio {
+            w = rawW
+            h = rawW / ratio
+        } else {
+            h = rawH
+            w = rawH * ratio
+        }
+        let ox = dx >= 0 ? start.x : start.x - w
+        let oy = dy >= 0 ? start.y : start.y - h
+        return NSRect(x: ox, y: oy, width: w, height: h)
+    }
+
+    private func drawCropOverlay(rect sel: NSRect, isPreview: Bool) {
+        guard sel.width >= 2, sel.height >= 2 else { return }
+
+        let ctx = NSGraphicsContext.current?.cgContext
+        guard let ctx = ctx else { return }
+
+        // 半透明蒙版（预览态时更暗以突出选区）
+        let dimAlpha: CGFloat = isPreview ? 0.5 : 0.35
+        NSColor(white: 0, alpha: dimAlpha).setFill()
+        bounds.fill()
+
+        // 选区内：清除蒙版，显示原图
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: 1, y: -1)
+        let flippedSel = CGRect(x: sel.origin.x, y: bounds.height - sel.origin.y - sel.height, width: sel.width, height: sel.height)
+        ctx.clip(to: flippedSel)
+        if let bg = backgroundImage {
+            ctx.draw(bg, in: bounds)
+        }
+        ctx.restoreGState()
+
+        // 白色边框
+        NSColor.white.setStroke()
+        let border = NSBezierPath(rect: sel)
+        border.lineWidth = 2
+        border.stroke()
+
+        // 尺寸信息
+        let text = String(format: "%.0f × %.0f", sel.width, sel.height)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let origin = NSPoint(x: sel.minX + 8, y: sel.minY + 8)
+        let bgRect = NSRect(x: origin.x - 4, y: origin.y - 2, width: size.width + 8, height: size.height + 4)
+        NSColor(white: 0, alpha: 0.65).setFill()
+        NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
+        (text as NSString).draw(at: origin, withAttributes: attrs)
+
+        // 预览态：提示双击/回车确认，Esc 取消
+        if isPreview {
+            let hint = "Double-click or Enter to confirm · Esc to cancel"
+            let hintAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.white,
+            ]
+            let hintSize = (hint as NSString).size(withAttributes: hintAttrs)
+            let hintX = (bounds.width - hintSize.width) / 2
+            let hintY = bounds.height - 24
+            (hint as NSString).draw(at: NSPoint(x: hintX, y: hintY), withAttributes: hintAttrs)
         }
     }
 
@@ -154,6 +256,28 @@ class AnnotationCanvas: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
+        // 裁剪工具
+        if currentTool == .crop {
+            if let rect = cropPreviewRect {
+                if event.clickCount == 2 {
+                    cropPreviewRect = nil
+                    onApplyCrop?(rect)
+                    setNeedsDisplay(bounds)
+                    return
+                }
+                if rect.contains(point) {
+                    cropMovingLastPoint = point
+                    setNeedsDisplay(bounds)
+                    return
+                }
+                cropPreviewRect = nil
+            }
+            cropStartPoint = point
+            cropCurrentPoint = point
+            setNeedsDisplay(bounds)
+            return
+        }
+
         // 如果正在编辑文字，先完成编辑
         if case .editingText(let ann) = state {
             finishTextEditing(ann)
@@ -209,6 +333,26 @@ class AnnotationCanvas: NSView {
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
+        if let last = cropMovingLastPoint, var rect = cropPreviewRect {
+            let dx = point.x - last.x
+            let dy = point.y - last.y
+            rect.origin.x += dx
+            rect.origin.y += dy
+            let maxX = frame.width - rect.width
+            let maxY = frame.height - rect.height
+            rect.origin.x = max(0, min(rect.origin.x, maxX))
+            rect.origin.y = max(0, min(rect.origin.y, maxY))
+            cropPreviewRect = rect
+            cropMovingLastPoint = point
+            setNeedsDisplay(bounds)
+            return
+        }
+        if cropStartPoint != nil {
+            cropCurrentPoint = point
+            setNeedsDisplay(bounds)
+            return
+        }
+
         switch state {
         case .drawing:
             guard let ann = drawingAnnotation else { return }
@@ -244,6 +388,21 @@ class AnnotationCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if cropMovingLastPoint != nil {
+            cropMovingLastPoint = nil
+            return
+        }
+        if let start = cropStartPoint, let current = cropCurrentPoint {
+            let sel = cropSelectionRect(start: start, current: current)
+            cropStartPoint = nil
+            cropCurrentPoint = nil
+            if sel.width >= 2, sel.height >= 2 {
+                cropPreviewRect = sel
+            }
+            setNeedsDisplay(bounds)
+            return
+        }
+
         switch state {
         case .drawing:
             if let ann = drawingAnnotation {
@@ -283,6 +442,14 @@ class AnnotationCanvas: NSView {
     // MARK: - 键盘事件
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 { // Enter / Return
+            if let rect = cropPreviewRect {
+                cropPreviewRect = nil
+                onApplyCrop?(rect)
+                setNeedsDisplay(bounds)
+                return
+            }
+        }
         if event.keyCode == 51 || event.keyCode == 117 { // Delete / Forward Delete
             if case .selected(let ann) = state {
                 deleteAnnotation(ann)
@@ -300,8 +467,29 @@ class AnnotationCanvas: NSView {
         super.keyDown(with: event)
     }
 
+    /// 若处于裁剪预览态则确认裁剪，返回是否已处理
+    func confirmCropPreviewIfNeeded() -> Bool {
+        guard let rect = cropPreviewRect else { return false }
+        cropPreviewRect = nil
+        onApplyCrop?(rect)
+        setNeedsDisplay(bounds)
+        return true
+    }
+
     /// Esc 逻辑，可由 keyDown 或窗口级 key 监控调用
     func performEscapeAction() {
+        if cropStartPoint != nil {
+            cropStartPoint = nil
+            cropCurrentPoint = nil
+            setNeedsDisplay(bounds)
+            return
+        }
+        if cropPreviewRect != nil {
+            cropMovingLastPoint = nil
+            cropPreviewRect = nil
+            setNeedsDisplay(bounds)
+            return
+        }
         if case .editingText(let ann) = state {
             cancelTextEditing(ann)
             return

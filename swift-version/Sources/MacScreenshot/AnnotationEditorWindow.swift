@@ -2,7 +2,7 @@ import Cocoa
 
 class AnnotationEditorWindow: NSWindow {
 
-    private let originalImage: CGImage
+    private var originalImage: CGImage
     private let canvas: AnnotationCanvas
     private let annotationToolbar: AnnotationToolbar
     private var escKeyMonitor: Any?
@@ -46,6 +46,9 @@ class AnnotationEditorWindow: NSWindow {
         canvas.onToolChangeRequested = { [weak self] tool in
             self?.annotationToolbar.selectTool(tool)
         }
+        canvas.onApplyCrop = { [weak self] rect in
+            self?.applyCrop(rect: rect)
+        }
         annotationToolbar.delegate = self
 
         // 布局：顶部工具栏 + 下方画布（包裹在 ScrollView 中）
@@ -83,11 +86,17 @@ class AnnotationEditorWindow: NSWindow {
 
         self.delegate = self
 
-        // Esc 在非编辑态（如焦点在工具栏）时也能退回箭头工具
+        // Esc / Enter：非编辑态时也能响应（如焦点在工具栏）
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self, self.isKeyWindow, event.keyCode == 53 else { return event }
-            self.canvas.performEscapeAction()
-            return nil
+            guard let self = self, self.isKeyWindow else { return event }
+            if event.keyCode == 53 {
+                self.canvas.performEscapeAction()
+                return nil
+            }
+            if event.keyCode == 36, self.canvas.confirmCropPreviewIfNeeded() {
+                return nil
+            }
+            return event
         }
     }
 
@@ -135,6 +144,34 @@ class AnnotationEditorWindow: NSWindow {
 
     private var shouldSave = false
 
+    private func applyCrop(rect: NSRect) {
+        let scale = CGFloat(originalImage.width) / canvas.frame.width
+        let canvasH = canvas.frame.height
+        // CGImage 原点在左下角，canvas 为左上角原点，需翻转 Y
+        let pixelRect = CGRect(
+            x: rect.origin.x * scale,
+            y: (canvasH - rect.origin.y - rect.height) * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
+        ).integral
+        guard pixelRect.width >= 2, pixelRect.height >= 2,
+              let cropped = originalImage.cropping(to: pixelRect) else { return }
+
+        originalImage = cropped
+        canvas.backgroundImage = cropped
+
+        let newW = CGFloat(cropped.width) / scale
+        let newH = CGFloat(cropped.height) / scale
+        canvas.setFrameSize(NSSize(width: newW, height: newH))
+
+        canvas.annotations.removeAll { !$0.frame.intersects(rect) }
+        for ann in canvas.annotations {
+            ann.move(by: NSSize(width: -rect.origin.x, height: -rect.origin.y))
+        }
+
+        annotationToolbar.selectTool(.arrow)
+    }
+
     private func saveAndClose() {
         shouldSave = true
         close()
@@ -150,7 +187,7 @@ class AnnotationEditorWindow: NSWindow {
 
 extension AnnotationEditorWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        if shouldSave, !canvas.annotations.isEmpty {
+        if shouldSave {
             if let composite = renderCompositeImage() {
                 _ = ScreenCapture.writeToClipboard(composite)
             }
@@ -179,6 +216,10 @@ extension AnnotationEditorWindow: AnnotationToolbarDelegate {
     func toolbarDidSelectDashPattern(_ pattern: [CGFloat]) {
         canvas.currentDashPattern = pattern
         canvas.updateSelectedAnnotationStyle()
+    }
+
+    func toolbarDidSelectCropAspectRatio(_ ratio: CropAspectRatio?) {
+        canvas.currentCropAspectRatio = ratio ?? .free
     }
 
     func toolbarDidSelectFontName(_ name: String) {

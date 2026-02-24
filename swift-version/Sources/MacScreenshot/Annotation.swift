@@ -1,7 +1,39 @@
 import Cocoa
 
 enum AnnotationTool: String, CaseIterable {
-    case arrow, rect, ellipse, line, freehand, text, mosaic
+    case arrow, rect, ellipse, line, freehand, text, mosaic, crop
+}
+
+/// 裁剪比例预设
+enum CropAspectRatio: String, CaseIterable {
+    case free
+    case ratio16_9
+    case ratio4_3
+    case ratio1_1
+    case ratio3_2
+    case ratio2_3
+
+    var displayName: String {
+        switch self {
+        case .free: return "Free"
+        case .ratio16_9: return "16:9"
+        case .ratio4_3: return "4:3"
+        case .ratio1_1: return "1:1"
+        case .ratio3_2: return "3:2"
+        case .ratio2_3: return "2:3"
+        }
+    }
+
+    var value: CGFloat? {
+        switch self {
+        case .free: return nil
+        case .ratio16_9: return 16 / 9
+        case .ratio4_3: return 4 / 3
+        case .ratio1_1: return 1
+        case .ratio3_2: return 3 / 2
+        case .ratio2_3: return 2 / 3
+        }
+    }
 }
 
 class Annotation {
@@ -62,6 +94,8 @@ class Annotation {
         case .text:
             let size = textSize
             return NSRect(origin: startPoint, size: size)
+        case .crop:
+            return .zero
         }
     }
 
@@ -124,6 +158,8 @@ class Annotation {
         case .text:
             guard !text.isEmpty else { return }
             (text as NSString).draw(at: startPoint, withAttributes: textAttributes)
+        case .crop:
+            break
         case .mosaic:
             if let img = mosaicImage {
                 let f = frame
@@ -230,6 +266,8 @@ class Annotation {
             return false
         case .text:
             return frame.insetBy(dx: -4, dy: -4).contains(point)
+        case .crop:
+            return false
         }
     }
 
@@ -255,6 +293,8 @@ class Annotation {
             }
         case .text:
             startPoint.x += delta.width; startPoint.y += delta.height
+        case .crop:
+            break
         }
     }
 
@@ -275,6 +315,8 @@ class Annotation {
             }
         case .text:
             startPoint = newFrame.origin
+        case .crop:
+            break
         }
     }
 

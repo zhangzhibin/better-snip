@@ -1,1 +1,1 @@
-修改代码后，自动通过后台执行 `npm run tauri dev` 重启应用进行测试。
+每次修改后都重启 app 进行验证。Swift 版本：执行 `swift-version/run.sh`。
