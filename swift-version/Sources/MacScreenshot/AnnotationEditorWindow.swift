@@ -6,6 +6,9 @@ class AnnotationEditorWindow: NSWindow {
     private let canvas: AnnotationCanvas
     private let annotationToolbar: AnnotationToolbar
     private let hostScreen: NSScreen
+    /// 画布显示尺寸。窗口内容跟着这两条约束走，工具栏不能把图片拉变形。
+    private var canvasWidthConstraint: NSLayoutConstraint!
+    private var canvasHeightConstraint: NSLayoutConstraint!
     private var escKeyMonitor: Any?
     var onClose: (() -> Void)?
     /// 用户确认后交出合成图。直接关窗口不会调用。
@@ -69,6 +72,13 @@ class AnnotationEditorWindow: NSWindow {
 
         self.contentView = contentView
 
+        canvasWidthConstraint = canvas.widthAnchor.constraint(equalToConstant: canvasW)
+        canvasHeightConstraint = canvas.heightAnchor.constraint(equalToConstant: canvasH)
+        // 贴边约束低于宽高，窗口被工具栏撑宽时画布保持图片比例，而不是跟着拉变形。
+        let canvasTrailing = canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
+        let canvasBottom = canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        canvasTrailing.priority = .defaultHigh
+        canvasBottom.priority = .defaultHigh
         NSLayoutConstraint.activate([
             annotationToolbar.topAnchor.constraint(equalTo: contentView.topAnchor),
             annotationToolbar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -77,8 +87,10 @@ class AnnotationEditorWindow: NSWindow {
 
             canvas.topAnchor.constraint(equalTo: annotationToolbar.bottomAnchor),
             canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            canvasTrailing,
+            canvasBottom,
+            canvasWidthConstraint,
+            canvasHeightConstraint,
         ])
 
         self.delegate = self
@@ -93,7 +105,10 @@ class AnnotationEditorWindow: NSWindow {
             }
             if event.keyCode == 36 {
                 if self.canvas.confirmCropPreviewIfNeeded() { return nil }
-                if self.canvas.isEditingText { return event }
+                if self.canvas.isEditingText {
+                    self.canvas.commitTextEditingIfNeeded()
+                    return nil
+                }
                 self.saveAndClose()
                 return nil
             }
@@ -112,13 +127,21 @@ class AnnotationEditorWindow: NSWindow {
         return NSSize(width: imgW * fit, height: imgH * fit)
     }
 
-    /// 把窗口内容锁成「画布 + 工具栏」，并放到屏幕正中。
+    /// 把窗口内容锁成「画布 + 工具栏」。先放开最小尺寸，否则窗口缩不下去，图片会被拉变形。
     private func lockWindow(canvasSize: NSSize) {
-        let content = NSSize(width: canvasSize.width, height: canvasSize.height + AnnotationToolbar.toolbarHeight)
+        canvasWidthConstraint.constant = max(canvasSize.width, 1)
+        canvasHeightConstraint.constant = max(canvasSize.height, 1)
+        let content = NSSize(
+            width: canvasWidthConstraint.constant,
+            height: canvasHeightConstraint.constant + AnnotationToolbar.toolbarHeight
+        )
+        let target = frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
+        // 上限先收到目标尺寸，避免工具栏的固有宽度把窗口重新撑宽。
+        minSize = NSSize(width: 1, height: 1)
+        maxSize = target
         setContentSize(content)
-        let frameSize = frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
-        minSize = frameSize
-        maxSize = frameSize
+        minSize = frame.size
+        maxSize = frame.size
         centerInVisibleFrame()
     }
 
@@ -178,14 +201,13 @@ class AnnotationEditorWindow: NSWindow {
     private var shouldSave = false
 
     private func applyCrop(rect: NSRect) {
-        // 画布是左上角原点。CGImage.cropping 与区域截图、马赛克一样按像素自上而下取，不能再翻转 Y。
-        let scaleX = CGFloat(originalImage.width) / max(canvas.bounds.width, 1)
-        let scaleY = CGFloat(originalImage.height) / max(canvas.bounds.height, 1)
+        // 用当前画布的实际显示比例换算。宽高同一比例，裁出来的像素和选区一致。
+        let scale = CGFloat(originalImage.width) / max(canvas.bounds.width, 1)
         var pixelRect = CGRect(
-            x: rect.origin.x * scaleX,
-            y: rect.origin.y * scaleY,
-            width: rect.width * scaleX,
-            height: rect.height * scaleY
+            x: rect.origin.x * scale,
+            y: rect.origin.y * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
         ).integral
         let imageBounds = CGRect(x: 0, y: 0, width: originalImage.width, height: originalImage.height)
         pixelRect = pixelRect.intersection(imageBounds)
@@ -200,10 +222,10 @@ class AnnotationEditorWindow: NSWindow {
             ann.move(by: NSSize(width: -rect.origin.x, height: -rect.origin.y))
         }
 
-        // 沿用当前显示比例缩小窗口，标注坐标不用再换算。
-        let newW = max(CGFloat(cropped.width) / scaleX, 1)
-        let newH = max(CGFloat(cropped.height) / scaleY, 1)
-        lockWindow(canvasSize: NSSize(width: newW, height: newH))
+        lockWindow(canvasSize: NSSize(
+            width: CGFloat(cropped.width) / scale,
+            height: CGFloat(cropped.height) / scale
+        ))
         canvas.needsDisplay = true
         annotationToolbar.selectTool(.arrow)
     }

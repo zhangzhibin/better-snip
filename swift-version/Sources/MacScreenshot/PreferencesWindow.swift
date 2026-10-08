@@ -30,6 +30,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         }
 
         recorder.onChange = { [weak self] keyCode, modifiers, character in
+            AppPreferences.isHotkeyEnabled = true
             AppPreferences.hotkeyKeyCode = keyCode
             AppPreferences.hotkeyModifiers = modifiers
             AppPreferences.hotkeyCharacter = character
@@ -37,7 +38,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
             self?.onShortcutChanged?()
         }
         recorder.onReset = { [weak self] in
-            AppPreferences.resetHotkey()
+            AppPreferences.clearHotkey()
             self?.recorder.display = AppPreferences.shortcutDisplay()
             self?.onShortcutChanged?()
         }
@@ -46,10 +47,14 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         }
         recorder.display = AppPreferences.shortcutDisplay()
 
-        destinationPopup.addItems(withTitles: ["Clipboard", "File"])
+        destinationPopup.addItems(withTitles: ["Clipboard", "File", "Clipboard and File"])
         destinationPopup.target = self
         destinationPopup.action = #selector(destinationChanged(_:))
-        destinationPopup.selectItem(at: AppPreferences.destination == .file ? 1 : 0)
+        switch AppPreferences.destination {
+        case .clipboard: destinationPopup.selectItem(at: 0)
+        case .file: destinationPopup.selectItem(at: 1)
+        case .both: destinationPopup.selectItem(at: 2)
+        }
 
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.font = .systemFont(ofSize: 12)
@@ -64,7 +69,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         folderRow.alignment = .centerY
         pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let hint = NSTextField(wrappingLabelWithString: "Hold Option when confirming a screenshot to use the other destination. Delete in the shortcut field restores ⌘⌥C.")
+        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. Clipboard and File always writes both. Delete in the shortcut field turns the shortcut off.")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
@@ -101,7 +106,9 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
     }
 
     @objc private func destinationChanged(_ sender: NSPopUpButton) {
-        AppPreferences.destination = sender.indexOfSelectedItem == 1 ? .file : .clipboard
+        let values: [SaveDestination] = [.clipboard, .file, .both]
+        let index = sender.indexOfSelectedItem
+        AppPreferences.destination = index < values.count ? values[index] : .clipboard
     }
 
     @objc private func chooseFolder() {

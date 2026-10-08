@@ -1,16 +1,27 @@
 import Carbon
 import Cocoa
 
-/// 确认截图时的默认去向。按住 Option 会在两者之间对调。
+/// 确认截图时的默认去向。按住 Option 时，剪贴板与文件对调；两者都保存时不变。
 enum SaveDestination: String {
     case clipboard
     case file
+    case both
+
+    func resolving(optionHeld: Bool) -> SaveDestination {
+        guard optionHeld else { return self }
+        switch self {
+        case .clipboard: return .file
+        case .file: return .clipboard
+        case .both: return .both
+        }
+    }
 }
 
 enum AppPreferences {
     private static let keyCodeKey = "hotkeyKeyCode"
     private static let modifiersKey = "hotkeyModifiers"
     private static let characterKey = "hotkeyCharacter"
+    private static let hotkeyEnabledKey = "hotkeyEnabled"
     private static let directoryKey = "saveDirectory"
     private static let destinationKey = "saveDestination"
 
@@ -64,13 +75,21 @@ enum AppPreferences {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: destinationKey) }
     }
 
-    static func resetHotkey() {
-        hotkeyKeyCode = defaultKeyCode
-        hotkeyModifiers = defaultModifiers
-        hotkeyCharacter = defaultCharacter
+    /// 未设置过时默认开启。在快捷键栏按 Delete 后关闭，不再响应全局热键。
+    static var isHotkeyEnabled: Bool {
+        get {
+            guard UserDefaults.standard.object(forKey: hotkeyEnabledKey) != nil else { return true }
+            return UserDefaults.standard.bool(forKey: hotkeyEnabledKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: hotkeyEnabledKey) }
+    }
+
+    static func clearHotkey() {
+        isHotkeyEnabled = false
     }
 
     static func shortcutDisplay(character: String = hotkeyCharacter, modifiers: NSEvent.ModifierFlags = hotkeyModifiers) -> String {
+        guard isHotkeyEnabled else { return "None" }
         var text = ""
         if modifiers.contains(.control) { text += "⌃" }
         if modifiers.contains(.option) { text += "⌥" }

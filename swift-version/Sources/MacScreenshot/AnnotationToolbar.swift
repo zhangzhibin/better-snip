@@ -193,10 +193,23 @@ class AnnotationToolbar: NSView {
         closeBtn.action = #selector(undoTapped)
         mainStack.addArrangedSubview(closeBtn)
 
-        let saveBtn = makeIconButton(symbol: "checkmark.circle", fallback: "✓", tooltip: "Done (Return). Hold Option to switch clipboard/file")
+        let saveBtn = makeIconButton(symbol: "checkmark.circle", fallback: "Save", tooltip: "Save (Return)")
+        saveBtn.title = "Save"
+        saveBtn.imagePosition = .imageLeading
+        saveBtn.bezelStyle = .rounded
+        saveBtn.setButtonType(.momentaryPushIn)
+        saveBtn.controlSize = .regular
+        // 回车键等价使它成为窗口的首选按钮，使用强调色。
+        saveBtn.keyEquivalent = "\r"
         saveBtn.target = self
         saveBtn.action = #selector(doneTapped)
         mainStack.addArrangedSubview(saveBtn)
+
+        // 裁剪后的图可能比这一排按钮窄，按钮要让位，不能把窗口撑成扁条。
+        mainStack.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        for view in mainStack.arrangedSubviews {
+            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
 
         updateToolSelection()
     }

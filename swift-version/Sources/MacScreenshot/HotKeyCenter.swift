@@ -29,8 +29,8 @@ final class HotKeyCenter {
     }
 
     func registerCurrent() {
-        guard !suspended else { return }
         unregister()
+        guard !suspended, AppPreferences.isHotkeyEnabled else { return }
         let hotKeyID = EventHotKeyID(signature: signature, id: self.hotKeyID)
         let status = RegisterEventHotKey(
             UInt32(AppPreferences.hotkeyKeyCode),

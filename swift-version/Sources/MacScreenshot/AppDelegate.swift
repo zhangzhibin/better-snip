@@ -176,21 +176,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 按偏好设置写入剪贴板或文件。按住 Option 时对调。存文件失败则退回剪贴板，避免丢图。
+    /// 按偏好设置写入剪贴板、文件，或两者。按住 Option 时在剪贴板和文件之间对调。只存文件失败时退回剪贴板。
     private func export(_ image: CGImage, on screen: NSScreen) {
-        let optionHeld = NSEvent.modifierFlags.contains(.option)
-        var destination = AppPreferences.destination
-        if optionHeld {
-            destination = destination == .clipboard ? .file : .clipboard
-        }
-        let ok: Bool
-        switch destination {
-        case .clipboard:
+        let destination = AppPreferences.destination.resolving(optionHeld: NSEvent.modifierFlags.contains(.option))
+        var ok = false
+        if destination == .clipboard || destination == .both {
             ok = ScreenCapture.writeToClipboard(image)
-        case .file:
+        }
+        if destination == .file || destination == .both {
             if ScreenCapture.savePNG(image, to: AppPreferences.saveDirectory) != nil {
                 ok = true
-            } else {
+            } else if destination == .file {
                 ok = ScreenCapture.writeToClipboard(image)
             }
         }
@@ -229,7 +225,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateCaptureMenuShortcut() {
         guard let captureItem else { return }
-        if shortcutSuspended {
+        if shortcutSuspended || !AppPreferences.isHotkeyEnabled {
             captureItem.keyEquivalent = ""
             captureItem.keyEquivalentModifierMask = []
             return
