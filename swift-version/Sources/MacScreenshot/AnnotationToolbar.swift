@@ -29,6 +29,7 @@ class AnnotationToolbar: NSView {
     private var dashPopup: NSPopUpButton!
     private var textOptionsStack: NSStackView!
     private var cropRatioPopup: NSPopUpButton!
+    private var mainStack: NSStackView!
 
     override var isFlipped: Bool { true }
 
@@ -45,7 +46,7 @@ class AnnotationToolbar: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        let mainStack = NSStackView()
+        mainStack = NSStackView()
         mainStack.orientation = .horizontal
         mainStack.spacing = 6
         mainStack.alignment = .centerY
@@ -205,13 +206,23 @@ class AnnotationToolbar: NSView {
         saveBtn.action = #selector(doneTapped)
         mainStack.addArrangedSubview(saveBtn)
 
-        // 裁剪后的图可能比这一排按钮窄，按钮要让位，不能把窗口撑成扁条。
-        mainStack.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
-        for view in mainStack.arrangedSubviews {
-            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        }
-
         updateToolSelection()
+    }
+
+    /// 按钮按固有宽度排开所需的窗口内容宽度。弹性空白不计入。
+    var minimumContentWidth: CGFloat {
+        var width: CGFloat = 16
+        var count = 0
+        for view in mainStack.arrangedSubviews where !view.isHidden {
+            let itemWidth = view.fittingSize.width
+            guard itemWidth.isFinite, itemWidth >= 1, itemWidth < 8_000 else { continue }
+            width += itemWidth
+            count += 1
+        }
+        if count > 1 {
+            width += mainStack.spacing * CGFloat(count - 1)
+        }
+        return ceil(width)
     }
 
     // MARK: - Actions

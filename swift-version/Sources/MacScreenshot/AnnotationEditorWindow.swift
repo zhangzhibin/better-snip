@@ -45,9 +45,6 @@ class AnnotationEditorWindow: NSWindow {
 
         self.title = "Screenshot Markup"
         self.isReleasedWhenClosed = false
-        let locked = frameRect(forContentRect: NSRect(origin: .zero, size: NSSize(width: winW, height: winH))).size
-        self.minSize = locked
-        self.maxSize = locked
 
         canvas.backgroundImage = image
         canvas.onToolChangeRequested = { [weak self] tool in
@@ -61,9 +58,10 @@ class AnnotationEditorWindow: NSWindow {
         }
         annotationToolbar.delegate = self
 
-        // 工具栏在上，画布铺满剩余区域，尺寸与图片显示大小一致。
+        // 工具栏在上。画布按图片尺寸居中；图片窄于工具栏时，两侧留出窗口底色，不拉变形。
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: winW, height: winH))
         contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         annotationToolbar.translatesAutoresizingMaskIntoConstraints = false
         canvas.translatesAutoresizingMaskIntoConstraints = false
@@ -74,11 +72,6 @@ class AnnotationEditorWindow: NSWindow {
 
         canvasWidthConstraint = canvas.widthAnchor.constraint(equalToConstant: canvasW)
         canvasHeightConstraint = canvas.heightAnchor.constraint(equalToConstant: canvasH)
-        // 贴边约束低于宽高，窗口被工具栏撑宽时画布保持图片比例，而不是跟着拉变形。
-        let canvasTrailing = canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
-        let canvasBottom = canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        canvasTrailing.priority = .defaultHigh
-        canvasBottom.priority = .defaultHigh
         NSLayoutConstraint.activate([
             annotationToolbar.topAnchor.constraint(equalTo: contentView.topAnchor),
             annotationToolbar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -86,15 +79,14 @@ class AnnotationEditorWindow: NSWindow {
             annotationToolbar.heightAnchor.constraint(equalToConstant: AnnotationToolbar.toolbarHeight),
 
             canvas.topAnchor.constraint(equalTo: annotationToolbar.bottomAnchor),
-            canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            canvasTrailing,
-            canvasBottom,
+            canvas.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             canvasWidthConstraint,
             canvasHeightConstraint,
         ])
 
         self.delegate = self
-        centerInVisibleFrame()
+        lockWindow(canvasSize: NSSize(width: canvasW, height: canvasH))
 
         // Esc / Enter：非编辑态时也能响应（如焦点在工具栏）
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -127,22 +119,40 @@ class AnnotationEditorWindow: NSWindow {
         return NSSize(width: imgW * fit, height: imgH * fit)
     }
 
-    /// 把窗口内容锁成「画布 + 工具栏」。先放开最小尺寸，否则窗口缩不下去，图片会被拉变形。
+    /// 把窗口内容锁成「画布 + 工具栏」。图片窄于工具栏时加宽到能放下按钮，画布仍按图片比例居中。
     private func lockWindow(canvasSize: NSSize) {
+        applyContentSize(contentSize(forCanvas: canvasSize), recenter: true)
+    }
+
+    /// 切换工具露出更多控件时加宽窗口，不移动窗口、不改变画布比例。
+    private func ensureToolbarFits() {
+        let content = contentSize(forCanvas: NSSize(
+            width: canvasWidthConstraint.constant,
+            height: canvasHeightConstraint.constant
+        ))
+        applyContentSize(content, recenter: false)
+    }
+
+    private func contentSize(forCanvas canvasSize: NSSize) -> NSSize {
         canvasWidthConstraint.constant = max(canvasSize.width, 1)
         canvasHeightConstraint.constant = max(canvasSize.height, 1)
-        let content = NSSize(
-            width: canvasWidthConstraint.constant,
+        annotationToolbar.layoutSubtreeIfNeeded()
+        return NSSize(
+            width: max(canvasWidthConstraint.constant, annotationToolbar.minimumContentWidth),
             height: canvasHeightConstraint.constant + AnnotationToolbar.toolbarHeight
         )
+    }
+
+    private func applyContentSize(_ content: NSSize, recenter: Bool) {
         let target = frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
-        // 上限先收到目标尺寸，避免工具栏的固有宽度把窗口重新撑宽。
         minSize = NSSize(width: 1, height: 1)
         maxSize = target
         setContentSize(content)
         minSize = frame.size
         maxSize = frame.size
-        centerInVisibleFrame()
+        if recenter {
+            centerInVisibleFrame()
+        }
     }
 
     private func centerInVisibleFrame() {
@@ -258,6 +268,7 @@ extension AnnotationEditorWindow: NSWindowDelegate {
 extension AnnotationEditorWindow: AnnotationToolbarDelegate {
     func toolbarDidSelectTool(_ tool: AnnotationTool) {
         canvas.currentTool = tool
+        ensureToolbarFits()
     }
 
     func toolbarDidSelectColor(_ color: NSColor) {
