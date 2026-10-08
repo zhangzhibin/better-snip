@@ -4,6 +4,10 @@ import PackageDescription
 let package = Package(
     name: "MacScreenshot",
     platforms: [.macOS(.v12)],
+    products: [
+        .library(name: "Clibwebp", targets: ["Clibwebp"]),
+        .executable(name: "MacScreenshot", targets: ["MacScreenshot"]),
+    ],
     targets: [
         .target(
             name: "Clibwebp",

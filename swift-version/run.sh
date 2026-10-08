@@ -3,7 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="MacScreenshot"
+APP_NAME="Simple Screenshot"
+BINARY_NAME="MacScreenshot"
 BUILD_DIR=".build/release"
 APP_DIR=".build/${APP_NAME}.app"
 PLIST="${APP_DIR}/Contents/Info.plist"
@@ -13,31 +14,15 @@ echo ">> Building ${APP_NAME}..."
 swift build -c release 2>&1
 
 echo ">> Packaging as .app..."
-mkdir -p "${MACOS_DIR}"
-cp "${BUILD_DIR}/${APP_NAME}" "${MACOS_DIR}/${APP_NAME}"
-
-cat > "${PLIST}" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-10.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key>
-  <string>${APP_NAME}</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.cloudcr.macscreenshot.swift</string>
-  <key>CFBundleVersion</key>
-  <string>1.0</string>
-  <key>CFBundleExecutable</key>
-  <string>${APP_NAME}</string>
-  <key>LSUIElement</key>
-  <true/>
-  <key>NSScreenCaptureUsageDescription</key>
-  <string>MacScreenshot needs screen recording permission to capture screenshots.</string>
-</dict>
-</plist>
-PLIST
+mkdir -p "${MACOS_DIR}" "${APP_DIR}/Contents/Resources/Licenses"
+cp "${BUILD_DIR}/${BINARY_NAME}" "${MACOS_DIR}/${APP_NAME}"
+cp App/Info.plist "${PLIST}"
+cp App/AppIcon.icns "${APP_DIR}/Contents/Resources/AppIcon.icns"
+cp App/PrivacyInfo.xcprivacy "${APP_DIR}/Contents/Resources/PrivacyInfo.xcprivacy"
+cp App/Licenses/COPYING App/Licenses/PATENTS "${APP_DIR}/Contents/Resources/Licenses/"
 
 # 关闭之前的实例
+pkill -x "${BINARY_NAME}" 2>/dev/null || true
 pkill -x "${APP_NAME}" 2>/dev/null || true
 sleep 0.3
 

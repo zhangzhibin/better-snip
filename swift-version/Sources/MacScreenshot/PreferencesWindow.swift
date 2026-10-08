@@ -5,6 +5,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
     var onSuspendShortcut: ((Bool) -> Void)?
     var onShortcutChanged: (() -> Void)?
     var onClose: (() -> Void)?
+    private var licensesWindow: NSWindow?
 
     private let recorder = ShortcutRecorder()
     private let destinationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -118,9 +119,14 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
+        let licensesButton = NSButton(title: "Licenses", target: self, action: #selector(showLicenses))
+        licensesButton.bezelStyle = .rounded
         let restoreButton = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults))
         restoreButton.bezelStyle = .rounded
-        restoreButton.translatesAutoresizingMaskIntoConstraints = false
+        let buttonRow = NSStackView(views: [licensesButton, restoreButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 8
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
         let grid = NSGridView(views: [
             [shortcutLabel, recorder],
@@ -139,7 +145,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         guard let content = contentView else { return }
         content.addSubview(grid)
         content.addSubview(hint)
-        content.addSubview(restoreButton)
+        content.addSubview(buttonRow)
         recorder.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             recorder.widthAnchor.constraint(equalToConstant: 180),
@@ -150,8 +156,8 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
             hint.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 16),
             hint.leadingAnchor.constraint(equalTo: grid.leadingAnchor),
             hint.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
-            restoreButton.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 16),
-            restoreButton.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
+            buttonRow.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 16),
+            buttonRow.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
         ])
     }
 
@@ -243,9 +249,51 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     /// 在访达中打开保存目录，方便直接找到截图。目录还不存在时打开上一级。
     @objc private func revealFolder() {
-        let url = AppPreferences.saveDirectory
-        let target = FileManager.default.fileExists(atPath: url.path) ? url : url.deletingLastPathComponent()
-        NSWorkspace.shared.open(target)
+        AppPreferences.withSaveDirectory { url in
+            let target = FileManager.default.fileExists(atPath: url.path) ? url : url.deletingLastPathComponent()
+            NSWorkspace.shared.open(target)
+        }
+    }
+
+    @objc private func showLicenses() {
+        if licensesWindow == nil {
+            let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 560, height: 420))
+            textView.string = Self.licenseText()
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.textContainerInset = NSSize(width: 12, height: 12)
+            textView.autoresizingMask = [.width, .height]
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 420))
+            scroll.hasVerticalScroller = true
+            scroll.documentView = textView
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+                styleMask: [.titled, .closable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Licenses"
+            window.contentView = scroll
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 560, height: 420))
+            licensesWindow = window
+        }
+        licensesWindow?.center()
+        licensesWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private static func licenseText() -> String {
+        let names = ["COPYING", "PATENTS"]
+        let parts = names.compactMap { name -> String? in
+            let url = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "Licenses")
+            guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+            return text
+        }
+        if parts.isEmpty {
+            return "Third-party license text is not in the app bundle."
+        }
+        return parts.joined(separator: "\n\n----------\n\n")
     }
 
     @objc private func chooseFolder() {
@@ -257,7 +305,9 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         panel.prompt = "Choose"
         panel.beginSheetModal(for: self) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            AppPreferences.saveDirectory = url
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            AppPreferences.rememberSaveDirectory(url)
             self?.updatePathLabel()
         }
     }

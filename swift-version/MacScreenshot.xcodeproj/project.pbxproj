@@ -1,0 +1,282 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		F1000000000000000000000B /* Clibwebp in Frameworks */ = {isa = PBXBuildFile; productRef = F1000000000000000000000C /* Clibwebp */; };
+		F10000000000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000014 /* Assets.xcassets */; };
+		F10000000000000000000017 /* Licenses in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000016 /* Licenses */; };
+		F10000000000000000000019 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000018 /* PrivacyInfo.xcprivacy */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F10000000000000000000005 /* MacScreenshot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Simple Screenshot.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F10000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F10000000000000000000016 /* Licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Licenses; sourceTree = "<group>"; };
+		F10000000000000000000018 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F1000000000000000000001A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F1000000000000000000001B /* MacScreenshot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MacScreenshot.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		F10000000000000000000006 /* MacScreenshot */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Sources/MacScreenshot; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F10000000000000000000009 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F1000000000000000000000B /* Clibwebp in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F10000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000006 /* MacScreenshot */,
+				F10000000000000000000003 /* App */,
+				F10000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F10000000000000000000003 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000014 /* Assets.xcassets */,
+				F1000000000000000000001A /* Info.plist */,
+				F1000000000000000000001B /* MacScreenshot.entitlements */,
+				F10000000000000000000018 /* PrivacyInfo.xcprivacy */,
+				F10000000000000000000016 /* Licenses */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F10000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000005 /* MacScreenshot.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F10000000000000000000007 /* MacScreenshot */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F1000000000000000000000E /* Build configuration list for PBXNativeTarget "MacScreenshot" */;
+			buildPhases = (
+				F10000000000000000000008 /* Sources */,
+				F10000000000000000000009 /* Frameworks */,
+				F1000000000000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F10000000000000000000006 /* MacScreenshot */,
+			);
+			name = MacScreenshot;
+			packageProductDependencies = (
+				F1000000000000000000000C /* Clibwebp */,
+			);
+			productName = MacScreenshot;
+			productReference = F10000000000000000000005 /* MacScreenshot.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					F10000000000000000000007 = {
+						DevelopmentTeam = LT6L78MXPQ;
+					};
+				};
+			};
+			buildConfigurationList = F1000000000000000000000F /* Build configuration list for PBXProject "MacScreenshot" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = F10000000000000000000002;
+			packageReferences = (
+				F1000000000000000000000D /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = F10000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F10000000000000000000007 /* MacScreenshot */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F1000000000000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000015 /* Assets.xcassets in Resources */,
+				F10000000000000000000017 /* Licenses in Resources */,
+				F10000000000000000000019 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F10000000000000000000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F10000000000000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/MacScreenshot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LT6L78MXPQ;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cloudcr.simplescreenshot;
+				PRODUCT_NAME = "Simple Screenshot";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F10000000000000000000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/MacScreenshot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LT6L78MXPQ;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cloudcr.simplescreenshot;
+				PRODUCT_NAME = "Simple Screenshot";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F10000000000000000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_NS_ASSERTIONS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F10000000000000000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F1000000000000000000000E /* Build configuration list for PBXNativeTarget "MacScreenshot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000010 /* Debug */,
+				F10000000000000000000011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F1000000000000000000000F /* Build configuration list for PBXProject "MacScreenshot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000012 /* Debug */,
+				F10000000000000000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F1000000000000000000000D /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F1000000000000000000000C /* Clibwebp */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1000000000000000000000D /* XCLocalSwiftPackageReference "." */;
+			productName = Clibwebp;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F10000000000000000000001 /* Project object */;
+}

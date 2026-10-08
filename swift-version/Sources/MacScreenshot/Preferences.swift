@@ -41,6 +41,7 @@ enum AppPreferences {
     private static let characterKey = "hotkeyCharacter"
     private static let hotkeyEnabledKey = "hotkeyEnabled"
     private static let directoryKey = "saveDirectory"
+    private static let bookmarkKey = "saveDirectoryBookmark"
     private static let destinationKey = "saveDestination"
     private static let imageFormatKey = "imageFormat"
     private static let imageQualityKey = "imageQuality"
@@ -84,10 +85,48 @@ enum AppPreferences {
             if let path = UserDefaults.standard.string(forKey: directoryKey), !path.isEmpty {
                 return URL(fileURLWithPath: path, isDirectory: true)
             }
-            return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            return FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory() + "/Pictures", isDirectory: true)
         }
         set { UserDefaults.standard.set(newValue.path, forKey: directoryKey) }
+    }
+
+    /// 记住用户选过的目录，并尽量存成安全作用域书签，供沙盒版下次写入。
+    static func rememberSaveDirectory(_ url: URL) {
+        saveDirectory = url
+        storeBookmark(for: url)
+    }
+
+    /// 沙盒里用书签访问目录；没有书签时退回路径（开发版未开沙盒，或目录在「图片」权限内）。
+    static func withSaveDirectory<T>(_ body: (URL) -> T) -> T {
+        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            return body(saveDirectory)
+        }
+        var stale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else {
+            return body(saveDirectory)
+        }
+        let started = url.startAccessingSecurityScopedResource()
+        defer { if started { url.stopAccessingSecurityScopedResource() } }
+        if stale { storeBookmark(for: url) }
+        if url.path != UserDefaults.standard.string(forKey: directoryKey) {
+            UserDefaults.standard.set(url.path, forKey: directoryKey)
+        }
+        return body(url)
+    }
+
+    private static func storeBookmark(for url: URL) {
+        do {
+            let data = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            UserDefaults.standard.set(data, forKey: bookmarkKey)
+        } catch {
+            UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        }
     }
 
     static var destination: SaveDestination {
@@ -126,7 +165,7 @@ enum AppPreferences {
     /// 快捷键、保存去向、格式、质量和目录都回到初始值。
     static func restoreDefaults() {
         let defaults = UserDefaults.standard
-        for key in [keyCodeKey, modifiersKey, characterKey, hotkeyEnabledKey, directoryKey, destinationKey, imageFormatKey, imageQualityKey] {
+        for key in [keyCodeKey, modifiersKey, characterKey, hotkeyEnabledKey, directoryKey, bookmarkKey, destinationKey, imageFormatKey, imageQualityKey] {
             defaults.removeObject(forKey: key)
         }
     }
