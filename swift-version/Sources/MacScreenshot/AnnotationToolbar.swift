@@ -193,10 +193,9 @@ class AnnotationToolbar: NSView {
         closeBtn.action = #selector(undoTapped)
         mainStack.addArrangedSubview(closeBtn)
 
-        let saveBtn = makeIconButton(symbol: "square.and.arrow.down", fallback: "↓", tooltip: "Save & Close")
+        let saveBtn = makeIconButton(symbol: "checkmark.circle", fallback: "✓", tooltip: "Done (Return). Hold Option to switch clipboard/file")
         saveBtn.target = self
         saveBtn.action = #selector(doneTapped)
-        saveBtn.keyEquivalent = "\r"
         mainStack.addArrangedSubview(saveBtn)
 
         updateToolSelection()

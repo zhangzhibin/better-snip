@@ -53,6 +53,48 @@ enum ScreenCapture {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
     }
 
+    /// 把 flipped 视图里的选区（左上角原点、单位 point）转成该屏幕的 AppKit 矩形。
+    static func appKitRect(fromFlippedLocal rect: NSRect, on screen: NSScreen) -> NSRect {
+        NSRect(
+            x: screen.frame.minX + rect.minX,
+            y: screen.frame.maxY - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    /// 保存 PNG。同一秒内重名时追加序号。失败返回 nil。
+    static func savePNG(_ cgImage: CGImage, to directory: URL) -> URL? {
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else {
+            NSLog("[ScreenCapture] png representation failed")
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let stamp = formatter.string(from: Date())
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            NSLog("[ScreenCapture] create directory failed: \(error.localizedDescription)")
+            return nil
+        }
+        var url = directory.appendingPathComponent("Screenshot \(stamp).png")
+        var index = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appendingPathComponent("Screenshot \(stamp) \(index).png")
+            index += 1
+        }
+        do {
+            try pngData.write(to: url)
+            return url
+        } catch {
+            NSLog("[ScreenCapture] write png failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     static func writeToClipboard(_ cgImage: CGImage) -> Bool {
         let rep = NSBitmapImageRep(cgImage: cgImage)
         guard let tiffData = rep.tiffRepresentation else {

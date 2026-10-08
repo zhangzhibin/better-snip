@@ -7,14 +7,16 @@ class AnnotationEditorWindow: NSWindow {
     private let annotationToolbar: AnnotationToolbar
     private var escKeyMonitor: Any?
     var onClose: (() -> Void)?
+    /// 用户确认后交出合成图。直接关窗口不会调用。
+    var onSave: ((CGImage) -> Void)?
 
-    init(image: CGImage, screen: NSScreen) {
+    /// anchor 为截图在屏幕上的 AppKit 矩形。窗口尽量盖住这块区域，标注就留在选区上。
+    init(image: CGImage, screen: NSScreen, anchor: NSRect? = nil) {
         self.originalImage = image
 
-        // 计算窗口尺寸：适配截图大小，限制不超过屏幕 80%
-        let screenFrame = screen.visibleFrame
-        let maxW = screenFrame.width * 0.8
-        let maxH = screenFrame.height * 0.8
+        let visible = screen.visibleFrame
+        let maxW = visible.width * 0.9
+        let maxH = visible.height * 0.9
         let imgW = CGFloat(image.width) / screen.backingScaleFactor
         let imgH = CGFloat(image.height) / screen.backingScaleFactor
         let scale = min(1.0, min(maxW / imgW, (maxH - AnnotationToolbar.toolbarHeight) / imgH))
@@ -23,10 +25,14 @@ class AnnotationEditorWindow: NSWindow {
         let winW = canvasW
         let winH = canvasH + AnnotationToolbar.toolbarHeight
 
-        // 窗口居中
-        let winX = screenFrame.origin.x + (screenFrame.width - winW) / 2
-        let winY = screenFrame.origin.y + (screenFrame.height - winH) / 2
-        let winRect = NSRect(x: winX, y: winY, width: winW, height: winH)
+        // 画布在内容区底部。让画布中心对齐选区；没有选区时在可见区域内居中。
+        let origin: NSPoint
+        if let anchor {
+            origin = NSPoint(x: anchor.midX - winW / 2, y: anchor.midY - canvasH / 2)
+        } else {
+            origin = NSPoint(x: visible.midX - winW / 2, y: visible.midY - winH / 2)
+        }
+        let winRect = NSRect(x: origin.x, y: origin.y, width: winW, height: winH)
 
         self.annotationToolbar = AnnotationToolbar(frame: NSRect(x: 0, y: 0, width: winW, height: AnnotationToolbar.toolbarHeight))
         self.canvas = AnnotationCanvas(frame: NSRect(x: 0, y: 0, width: canvasW, height: canvasH))
@@ -39,7 +45,7 @@ class AnnotationEditorWindow: NSWindow {
         )
 
         self.title = "Screenshot Markup"
-        self.minSize = NSSize(width: 400, height: 300)
+        self.minSize = NSSize(width: 240, height: 160)
         self.isReleasedWhenClosed = false
 
         canvas.backgroundImage = image
@@ -48,6 +54,9 @@ class AnnotationEditorWindow: NSWindow {
         }
         canvas.onApplyCrop = { [weak self] rect in
             self?.applyCrop(rect: rect)
+        }
+        canvas.onRequestFinish = { [weak self] in
+            self?.saveAndClose()
         }
         annotationToolbar.delegate = self
 
@@ -85,6 +94,7 @@ class AnnotationEditorWindow: NSWindow {
         canvas.setFrameSize(NSSize(width: imgW, height: imgH))
 
         self.delegate = self
+        clampIntoVisibleFrame(visible)
 
         // Esc / Enter：非编辑态时也能响应（如焦点在工具栏）
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -93,11 +103,26 @@ class AnnotationEditorWindow: NSWindow {
                 self.canvas.performEscapeAction()
                 return nil
             }
-            if event.keyCode == 36, self.canvas.confirmCropPreviewIfNeeded() {
+            if event.keyCode == 36 {
+                if self.canvas.confirmCropPreviewIfNeeded() { return nil }
+                if self.canvas.isEditingText { return event }
+                self.saveAndClose()
                 return nil
             }
             return event
         }
+    }
+
+    /// contentRect 不含标题栏，初始化后再把整窗（含标题栏）收进可见区域。
+    private func clampIntoVisibleFrame(_ visible: NSRect) {
+        var frame = self.frame
+        if frame.width > visible.width { frame.size.width = visible.width }
+        if frame.height > visible.height { frame.size.height = visible.height }
+        if frame.maxX > visible.maxX { frame.origin.x -= frame.maxX - visible.maxX }
+        if frame.minX < visible.minX { frame.origin.x = visible.minX }
+        if frame.maxY > visible.maxY { frame.origin.y -= frame.maxY - visible.maxY }
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        setFrame(frame, display: false)
     }
 
     deinit {
@@ -145,24 +170,27 @@ class AnnotationEditorWindow: NSWindow {
     private var shouldSave = false
 
     private func applyCrop(rect: NSRect) {
-        let scale = CGFloat(originalImage.width) / canvas.frame.width
-        let canvasH = canvas.frame.height
-        // CGImage 原点在左下角，canvas 为左上角原点，需翻转 Y
-        let pixelRect = CGRect(
-            x: rect.origin.x * scale,
-            y: (canvasH - rect.origin.y - rect.height) * scale,
-            width: rect.width * scale,
-            height: rect.height * scale
+        // 画布是左上角原点。CGImage.cropping 与区域截图、马赛克一样按像素自上而下取，不能再翻转 Y。
+        let scaleX = CGFloat(originalImage.width) / max(canvas.bounds.width, 1)
+        let scaleY = CGFloat(originalImage.height) / max(canvas.bounds.height, 1)
+        var pixelRect = CGRect(
+            x: rect.origin.x * scaleX,
+            y: rect.origin.y * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
         ).integral
+        let imageBounds = CGRect(x: 0, y: 0, width: originalImage.width, height: originalImage.height)
+        pixelRect = pixelRect.intersection(imageBounds)
         guard pixelRect.width >= 2, pixelRect.height >= 2,
               let cropped = originalImage.cropping(to: pixelRect) else { return }
 
         originalImage = cropped
         canvas.backgroundImage = cropped
 
-        let newW = CGFloat(cropped.width) / scale
-        let newH = CGFloat(cropped.height) / scale
+        let newW = CGFloat(cropped.width) / scaleX
+        let newH = CGFloat(cropped.height) / scaleY
         canvas.setFrameSize(NSSize(width: newW, height: newH))
+        canvas.needsDisplay = true
 
         canvas.annotations.removeAll { !$0.frame.intersects(rect) }
         for ann in canvas.annotations {
@@ -173,6 +201,7 @@ class AnnotationEditorWindow: NSWindow {
     }
 
     private func saveAndClose() {
+        canvas.commitTextEditingIfNeeded()
         shouldSave = true
         close()
     }
@@ -187,10 +216,8 @@ class AnnotationEditorWindow: NSWindow {
 
 extension AnnotationEditorWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        if shouldSave {
-            if let composite = renderCompositeImage() {
-                _ = ScreenCapture.writeToClipboard(composite)
-            }
+        if shouldSave, let composite = renderCompositeImage() {
+            onSave?(composite)
         }
         onClose?()
     }

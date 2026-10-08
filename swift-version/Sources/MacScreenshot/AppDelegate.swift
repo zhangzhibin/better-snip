@@ -1,27 +1,26 @@
 import Cocoa
 
-private enum CaptureMode {
-    case fullScreen
-    case region
-    case window
-}
-
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var captureItem: NSMenuItem!
     private var pickerWindows: [ScreenPickerWindow] = []
-    private var overlayWindows: [OverlayWindow] = []
     private var eventMonitor: Any?
-    private var currentMode: CaptureMode = .fullScreen
-    /// 窗口模式下当前检测到的窗口
-    private var detectedWindow: WindowInfo?
     private var editorWindow: AnnotationEditorWindow?
+    private var preferencesWindow: PreferencesWindow?
+    private var captureSession: CaptureSession?
+    private var preferencesShown = false
+    private var shortcutSuspended = false
+    private var lastCaptureUptime: TimeInterval = 0
 
     func setupTray() {
+        HotKeyCenter.shared.onPressed = { [weak self] in
+            self?.toggleUnifiedCapture()
+        }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            if #available(macOS 11.0, *),
-               let img = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot") {
+            if let img = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot") {
                 img.isTemplate = true
                 button.image = img
             } else {
@@ -31,17 +30,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        let fullItem = NSMenuItem(title: "Capture Full Screen", action: #selector(captureFullScreen), keyEquivalent: "f")
+        captureItem = NSMenuItem(title: "Capture", action: #selector(toggleUnifiedCapture), keyEquivalent: "")
+        captureItem.target = self
+        menu.addItem(captureItem)
+        updateCaptureMenuShortcut()
+
+        let fullItem = NSMenuItem(title: "Capture Full Screen", action: #selector(captureFullScreen), keyEquivalent: "")
         fullItem.target = self
         menu.addItem(fullItem)
 
-        let regionItem = NSMenuItem(title: "Capture Region", action: #selector(captureRegion), keyEquivalent: "r")
-        regionItem.target = self
-        menu.addItem(regionItem)
+        menu.addItem(.separator())
 
-        let windowItem = NSMenuItem(title: "Capture Window", action: #selector(captureWindow), keyEquivalent: "w")
-        windowItem.target = self
-        menu.addItem(windowItem)
+        let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(showPreferences), keyEquivalent: ",")
+        prefsItem.keyEquivalentModifierMask = .command
+        prefsItem.target = self
+        menu.addItem(prefsItem)
 
         menu.addItem(.separator())
 
@@ -52,31 +55,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    // MARK: - 菜单动作
+    // MARK: - 统一截图（拖选 / 点窗口）
+
+    @objc private func toggleUnifiedCapture() {
+        if captureSession != nil {
+            captureSession?.cancel()
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastCaptureUptime < 0.35 { return }
+        lastCaptureUptime = now
+        guard editorWindow == nil else { return }
+        closeAllPickers()
+
+        let session = CaptureSession()
+        session.onCapture = { [weak self] image, screen, anchor in
+            self?.captureSession = nil
+            self?.openEditor(image: image, on: screen, anchor: anchor)
+        }
+        session.onRegion = { [weak self] screen, rect in
+            self?.captureSession = nil
+            self?.captureRegion(rect, on: screen)
+        }
+        session.onWindow = { [weak self] info in
+            self?.captureSession = nil
+            self?.captureWindow(info)
+        }
+        session.onCancel = { [weak self] in
+            self?.captureSession = nil
+            self?.updateActivationPolicy()
+        }
+        captureSession = session
+        session.start()
+    }
+
+    private func captureRegion(_ rect: NSRect, on screen: NSScreen) {
+        let anchor = ScreenCapture.appKitRect(fromFlippedLocal: rect, on: screen)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            let displayID = ScreenCapture.displayID(for: screen)
+            guard let full = ScreenCapture.captureFullImage(displayID: displayID),
+                  let cropped = ScreenCapture.cropImage(full, rect: rect, scale: screen.backingScaleFactor) else { return }
+            self?.openEditor(image: cropped, on: screen, anchor: anchor)
+        }
+    }
+
+    private func captureWindow(_ info: WindowInfo) {
+        let appKit = WindowPicker.quartzToAppKit(rect: info.bounds)
+        let screen = NSScreen.screens.first { $0.frame.intersects(appKit) } ?? NSScreen.screens.first
+        guard let screen else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let image = WindowPicker.captureWindow(windowID: info.windowID) else { return }
+            self?.openEditor(image: image, on: screen, anchor: appKit)
+        }
+    }
+
+    // MARK: - 全屏
 
     @objc private func captureFullScreen() {
-        startScreenPicker(mode: .fullScreen)
-    }
-
-    @objc private func captureRegion() {
-        startScreenPicker(mode: .region)
-    }
-
-    @objc private func captureWindow() {
-        startScreenPicker(mode: .window)
-    }
-
-    // MARK: - 屏幕/窗口选择
-
-    private func startScreenPicker(mode: CaptureMode) {
+        guard editorWindow == nil, captureSession == nil else { return }
         closeAllPickers()
-        closeAllOverlays()
-        currentMode = mode
-        detectedWindow = nil
 
         for screen in NSScreen.screens {
             let picker = ScreenPickerWindow(screen: screen, onSelect: { [weak self] selectedScreen, displayID in
-                self?.handleSelection(screen: selectedScreen, displayID: displayID)
+                self?.handleFullScreenSelection(screen: selectedScreen, displayID: displayID)
             }, onCancel: { [weak self] in
                 self?.closeAllPickers()
             })
@@ -85,83 +126,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
-            self?.handleMouseMoved()
+            self?.updatePickerHighlights()
             return event
         }
-
-        handleMouseMoved()
+        updatePickerHighlights()
     }
 
-    private func handleMouseMoved() {
+    private func updatePickerHighlights() {
         let mouseLocation = NSEvent.mouseLocation
-
-        if currentMode == .window {
-            updateWindowHighlight(mouseLocation: mouseLocation)
-        } else {
-            updatePickerHighlights(mouseLocation: mouseLocation)
+        for picker in pickerWindows {
+            picker.pickerView?.setHighlighted(picker.targetScreen.frame.contains(mouseLocation))
         }
     }
 
-    /// 全屏/区域模式：整屏红色边框
-    private func updatePickerHighlights(mouseLocation: NSPoint) {
-        for picker in pickerWindows {
-            let isOnScreen = picker.targetScreen.frame.contains(mouseLocation)
-            picker.pickerView?.setHighlighted(isOnScreen)
-        }
-    }
-
-    /// 窗口模式：检测鼠标下窗口并高亮其 bounds
-    private func updateWindowHighlight(mouseLocation: NSPoint) {
-        let info = WindowPicker.windowUnderMouse()
-        detectedWindow = info
-
-        // 清除所有 picker 上的高亮
-        for picker in pickerWindows {
-            picker.pickerView?.setHighlightRect(nil)
-        }
-
-        guard let info = info else { return }
-
-        // 将 Quartz bounds 转为 AppKit 屏幕坐标
-        let appKitRect = WindowPicker.quartzToAppKit(rect: info.bounds)
-
-        // 找到窗口所在的屏幕，在对应 picker 上绘制高亮
-        for picker in pickerWindows {
-            let screenFrame = picker.targetScreen.frame
-            guard appKitRect.intersects(screenFrame) else { continue }
-
-            // 转为 picker view 的本地坐标（view 坐标系 flipped，origin = 屏幕左上角）
-            let localRect = NSRect(
-                x: appKitRect.origin.x - screenFrame.origin.x,
-                y: screenFrame.maxY - appKitRect.maxY,
-                width: appKitRect.width,
-                height: appKitRect.height
-            )
-            picker.pickerView?.setHighlightRect(localRect)
-        }
-    }
-
-    private func handleSelection(screen: NSScreen, displayID: CGDirectDisplayID) {
-        let mode = currentMode
-        let savedWindow = detectedWindow
+    private func handleFullScreenSelection(screen: NSScreen, displayID: CGDirectDisplayID) {
         closeAllPickers()
-
-        // 延后约 20ms（1-2 帧）再截屏，兼顾无红框与接近点击瞬间
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-            guard let self = self else { return }
-            switch mode {
-            case .fullScreen:
-                guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-                self.openEditor(image: fullImage, on: screen)
-            case .region:
-                guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-                self.openRegionOverlay(screen: screen, capturedImage: fullImage)
-            case .window:
-                guard let info = savedWindow,
-                      let cgImage = WindowPicker.captureWindow(windowID: info.windowID) else { return }
-                let targetScreen = NSScreen.screens.first { $0.frame.contains(WindowPicker.quartzToAppKit(rect: info.bounds).origin) } ?? screen
-                self.openEditor(image: cgImage, on: targetScreen)
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
+            self?.openEditor(image: fullImage, on: screen, anchor: screen.visibleFrame)
         }
     }
 
@@ -170,58 +152,96 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
-        for w in pickerWindows { w.orderOut(nil); w.close() }
+        for window in pickerWindows {
+            window.orderOut(nil)
+            window.close()
+        }
         pickerWindows.removeAll()
-        detectedWindow = nil
-    }
-
-    // MARK: - 区域截图
-
-    private func openRegionOverlay(screen: NSScreen, capturedImage: CGImage) {
-        closeAllOverlays()
-        let scale = screen.backingScaleFactor
-
-        let overlay = OverlayWindow(screen: screen, backgroundImage: capturedImage, onCrop: { [weak self] rect in
-            self?.closeAllOverlays()
-            guard let cropped = ScreenCapture.cropImage(capturedImage, rect: rect, scale: scale) else { return }
-            self?.openEditor(image: cropped, on: screen)
-        }, onCancel: { [weak self] in
-            self?.closeAllOverlays()
-        })
-        overlayWindows.append(overlay)
-        overlay.makeKeyAndOrderFront(nil)
-    }
-
-    private func closeAllOverlays() {
-        for w in overlayWindows { w.close() }
-        overlayWindows.removeAll()
     }
 
     // MARK: - 标记编辑器
 
-    private func openEditor(image: CGImage, on screen: NSScreen) {
-        if ScreenCapture.writeToClipboard(image) {
-            FlashWindow.show(on: screen)
+    private func openEditor(image: CGImage, on screen: NSScreen, anchor: NSRect?) {
+        let editor = AnnotationEditorWindow(image: image, screen: screen, anchor: anchor)
+        editor.onSave = { [weak self] image in
+            self?.export(image, on: screen)
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self = self else { return }
-            NSLog("[AppDelegate] openEditor: creating editor window")
-            let editor = AnnotationEditorWindow(image: image, screen: screen)
-            editor.onClose = { [weak self] in
-                self?.editorWindow = nil
-                NSApp.setActivationPolicy(.accessory)
-            }
-            self.editorWindow = editor
-            // agent app 需要临时切换为 regular 才能正常显示窗口
-            NSApp.setActivationPolicy(.regular)
-            editor.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            NSLog("[AppDelegate] openEditor: window displayed")
+        editor.onClose = { [weak self] in
+            self?.editorWindow = nil
+            self?.updateActivationPolicy()
         }
+        editorWindow = editor
+        updateActivationPolicy()
+        editor.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - 退出
+    /// 按偏好设置写入剪贴板或文件。按住 Option 时对调。存文件失败则退回剪贴板，避免丢图。
+    private func export(_ image: CGImage, on screen: NSScreen) {
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
+        var destination = AppPreferences.destination
+        if optionHeld {
+            destination = destination == .clipboard ? .file : .clipboard
+        }
+        let ok: Bool
+        switch destination {
+        case .clipboard:
+            ok = ScreenCapture.writeToClipboard(image)
+        case .file:
+            if ScreenCapture.savePNG(image, to: AppPreferences.saveDirectory) != nil {
+                ok = true
+            } else {
+                ok = ScreenCapture.writeToClipboard(image)
+            }
+        }
+        if ok { FlashWindow.show(on: screen) }
+    }
+
+    // MARK: - 偏好设置
+
+    @objc private func showPreferences() {
+        if preferencesWindow == nil {
+            let window = PreferencesWindow()
+            window.onSuspendShortcut = { [weak self] suspended in
+                self?.setShortcutSuspended(suspended)
+            }
+            window.onShortcutChanged = { [weak self] in
+                self?.updateCaptureMenuShortcut()
+            }
+            window.onClose = { [weak self] in
+                self?.preferencesShown = false
+                self?.updateActivationPolicy()
+            }
+            preferencesWindow = window
+        }
+        preferencesShown = true
+        updateActivationPolicy()
+        preferencesWindow?.center()
+        preferencesWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func setShortcutSuspended(_ suspended: Bool) {
+        shortcutSuspended = suspended
+        HotKeyCenter.shared.setSuspended(suspended)
+        updateCaptureMenuShortcut()
+    }
+
+    private func updateCaptureMenuShortcut() {
+        guard let captureItem else { return }
+        if shortcutSuspended {
+            captureItem.keyEquivalent = ""
+            captureItem.keyEquivalentModifierMask = []
+            return
+        }
+        captureItem.keyEquivalent = AppPreferences.hotkeyCharacter.lowercased()
+        captureItem.keyEquivalentModifierMask = AppPreferences.hotkeyModifiers
+    }
+
+    private func updateActivationPolicy() {
+        let interactive = editorWindow != nil || preferencesShown
+        NSApp.setActivationPolicy(interactive ? .regular : .accessory)
+    }
 
     @objc private func quit() {
         NSApp.terminate(nil)

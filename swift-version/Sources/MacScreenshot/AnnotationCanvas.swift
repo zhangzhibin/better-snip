@@ -42,6 +42,13 @@ class AnnotationCanvas: NSView {
     var currentCropAspectRatio: CropAspectRatio = .free
     /// 裁剪确认时回调，由窗口执行实际裁剪
     var onApplyCrop: ((NSRect) -> Void)?
+    /// 箭头工具下双击空白处，请求结束本次截图
+    var onRequestFinish: (() -> Void)?
+
+    var isEditingText: Bool {
+        if case .editingText = state { return true }
+        return false
+    }
 
     // MARK: - 状态
 
@@ -304,6 +311,12 @@ class AnnotationCanvas: NSView {
             }
         }
 
+        // 箭头工具下双击空白：结束截图（裁剪/文字工具仍走各自的双击）
+        if event.clickCount >= 2, currentTool == .arrow {
+            onRequestFinish?()
+            return
+        }
+
         // 没有命中 → 开始绘制
         state = .idle
         if currentTool == .text {
@@ -336,14 +349,19 @@ class AnnotationCanvas: NSView {
         if let last = cropMovingLastPoint, var rect = cropPreviewRect {
             let dx = point.x - last.x
             let dy = point.y - last.y
-            rect.origin.x += dx
-            rect.origin.y += dy
-            let maxX = frame.width - rect.width
-            let maxY = frame.height - rect.height
-            rect.origin.x = max(0, min(rect.origin.x, maxX))
-            rect.origin.y = max(0, min(rect.origin.y, maxY))
+            let maxX = max(0, bounds.width - rect.width)
+            let maxY = max(0, bounds.height - rect.height)
+            let clamped = NSPoint(
+                x: min(max(0, rect.origin.x + dx), maxX),
+                y: min(max(0, rect.origin.y + dy), maxY)
+            )
+            // 贴边时用实际位移更新锚点，避免鼠标滑出后再拖回来产生偏移
+            cropMovingLastPoint = NSPoint(
+                x: last.x + (clamped.x - rect.origin.x),
+                y: last.y + (clamped.y - rect.origin.y)
+            )
+            rect.origin = clamped
             cropPreviewRect = rect
-            cropMovingLastPoint = point
             setNeedsDisplay(bounds)
             return
         }
@@ -654,6 +672,12 @@ class AnnotationCanvas: NSView {
         state = .idle
         onAnnotationsChanged?()
         setNeedsDisplay(bounds)
+    }
+
+    func commitTextEditingIfNeeded() {
+        if case .editingText(let ann) = state {
+            finishTextEditing(ann)
+        }
     }
 
     func undo() {

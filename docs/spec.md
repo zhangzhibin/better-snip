@@ -2,7 +2,7 @@
 
 ## 概述
 
-极简 macOS 截图工具。应用启动后仅在系统菜单栏显示托盘图标，通过托盘菜单触发全屏、区域或窗口截图，截图完成后打开标记编辑器进行标注，最终结果写入系统剪贴板。
+极简 macOS 截图工具，用来替代已停更、仅有 Intel 版本的 Snip。应用启动后仅在系统菜单栏显示托盘图标。默认用全局快捷键调起一次截图：拖选区域，或悬停窗口后单击。截图落在选区上的标记编辑器里，确认后按偏好设置写入剪贴板或保存为文件。
 
 - **平台**：macOS 12+
 - **技术栈**：Swift + AppKit + Core Graphics
@@ -12,71 +12,54 @@
 
 | 功能 | 说明 |
 |------|------|
-| 全屏截图 | 选屏 → 立即截取整屏 → 标记编辑器 → 写入剪贴板 |
-| 区域截图 | 选屏 → 立即截取整屏 → 在静态截图上拖选裁剪 → 标记编辑器 → 写入剪贴板 |
-| 窗口截图 | 鼠标悬停高亮窗口（蓝色边框）→ 点击截取完整窗口（含阴影）→ 标记编辑器 → 写入剪贴板 |
-| 标记编辑器 | 截图后弹出，支持箭头/矩形/椭圆/直线/手绘/文字/马赛克标注，可调颜色/线宽/字体，支持选中/移动/缩放/删除，关闭时合成覆盖剪贴板 |
-| 多屏幕支持 | 鼠标移动选屏（红色边框提示），点击确认目标屏幕 |
-| 系统托盘 | 菜单栏右侧图标，菜单项：Full Screen / Region / Window / Quit |
-| 闪屏反馈 | 截图成功后在目标屏幕显示白色闪光（模拟快门） |
+| 快捷键截图 | 默认 ⌘⌥C。所有屏幕盖上遮罩：拖选区域，或悬停窗口（蓝色边框）后单击。松开后截图，编辑器尽量盖住选区 |
+| 全屏截图 | 菜单单独入口：选屏（红色边框）→ 截取整屏 → 标记编辑器 |
+| 标记编辑器 | 箭头/矩形/椭圆/直线/手绘/文字/马赛克/裁剪。可调颜色、线宽、虚线、字体。选中后可移动、缩放、删除。回车、完成按钮，或箭头工具下双击空白处确认 |
+| 保存 | 偏好设置选择剪贴板或文件（默认桌面）。确认时按住 Option 对调这两种去向。直接关窗口则丢弃，不写剪贴板 |
+| 偏好设置 | 快捷键（Delete 恢复 ⌘⌥C）、保存去向、保存目录 |
+| 多屏幕支持 | 遮罩覆盖所有屏幕；拖选限制在按下鼠标的那一块屏幕上 |
+| 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / Preferences… / Quit |
+| 闪屏反馈 | 确认并成功写出之后，在目标屏幕显示白色闪光 |
 
 ## 技术架构
 
 ```mermaid
 flowchart LR
-    Tray["系统托盘菜单"] -->|"点击菜单项"| Mode["确定模式\nfullScreen / region / window"]
-    Mode --> Picker["ScreenPickerWindow\n所有屏幕透明覆盖"]
-    Picker -->|"鼠标移动"| Highlight["全屏/区域: 红色屏幕边框\n窗口: 蓝色窗口边框"]
-    Picker -->|"鼠标点击"| Selected["关闭 Picker"]
-    Selected -->|"全屏模式"| FullCap["CGDisplayCreateImage"]
-    Selected -->|"区域模式"| RegCap["CGDisplayCreateImage"]
-    Selected -->|"窗口模式"| WinCap["CGWindowListCreateImage"]
-    FullCap --> Clipboard["写入剪贴板\n(TIFF + PNG)"]
-    RegCap --> Overlay["OverlayWindow\n截图作为背景"]
-    Overlay -->|"拖选裁剪"| Crop["cgImage.cropping"]
-    Crop --> Clipboard
-    WinCap --> Clipboard
-    Clipboard --> Flash["FlashWindow\n目标屏幕闪屏"]
-    Flash --> Editor["AnnotationEditorWindow\n标记编辑器"]
-    Editor -->|"有标记"| Composite["合成渲染 → 覆盖剪贴板"]
-    Editor -->|"无标记"| Done["结束"]
-    Composite --> Done
+    Trigger["⌘⌥C 或托盘 Capture"] --> Overlay["CaptureSession\n所有屏幕遮罩"]
+    Overlay -->|"拖选"| Region["关闭遮罩后\nCGDisplayCreateImage + 裁剪"]
+    Overlay -->|"单击窗口"| Window["关闭遮罩后\nCGWindowListCreateImage"]
+    Menu["托盘 Capture Full Screen"] --> Picker["选屏红色边框"]
+    Picker --> Full["CGDisplayCreateImage"]
+    Region --> Editor["标记编辑器\n盖住选区"]
+    Window --> Editor
+    Full --> Editor
+    Editor -->|"回车 / 完成 / 双击空白"| Export["剪贴板或 PNG 文件\nOption 对调"]
+    Editor -->|"关闭窗口"| Discard["丢弃"]
+    Export --> Flash["闪屏"]
 ```
 
 ## 交互流程
 
-### 选屏阶段（三种模式共用）
+### 快捷键截图
 
-1. 用户点击托盘菜单 **Capture Full Screen**、**Capture Region** 或 **Capture Window**
-2. 所有屏幕覆盖近透明窗口（`alpha: 0.001`，不改变当前活跃窗口状态）
-3. 全屏/区域模式：鼠标所在屏幕显示红色边框；窗口模式：鼠标下的窗口显示蓝色边框
-4. 鼠标左键点击确认
+1. 按下快捷键（默认 ⌘⌥C）或托盘 **Capture**。标注窗口已打开时忽略，避免冲掉未确认的标记
+2. 先拍下各屏画面，再盖上不透明遮罩（内容是刚拍下的画面）。然后激活应用，使点击和 Esc 能送到遮罩
+3. 鼠标移动：悬停的普通窗口显示蓝色边框。拖拽：在按下鼠标的那块屏幕上画出选区
+4. 松开时移动距离小于 5pt，且鼠标下有窗口：截取该窗口。没有窗口则保持遮罩
+5. 拖选松开，或单击窗口：从按下快捷键时拍下的画面里裁出对应区域
+6. Esc 取消
+
+> 窗口检测使用 `CGWindowListCopyWindowInfo`（按 Z 序），过滤自身 PID 和 `layer != 0`，取第一个包含鼠标位置的窗口。窗口图用 `CGWindowListCreateImage(.optionIncludingWindow, .bestResolution)`，含阴影。
 
 ### 全屏截图
 
-5. 关闭所有选屏窗口
-6. 立即 `CGDisplayCreateImage(displayID)` 截取目标屏幕
-7. 写入剪贴板（TIFF + PNG 双格式）→ 闪屏 → 打开标记编辑器
+1. 托盘 **Capture Full Screen**
+2. 所有屏幕近透明覆盖，鼠标所在屏幕显示红色边框，点击确认
+3. 关闭选屏窗口，约 50ms 后 `CGDisplayCreateImage`
 
-### 区域截图
+### 确认与保存
 
-5. 关闭所有选屏窗口
-6. 立即 `CGDisplayCreateImage(displayID)` 截取目标屏幕
-7. 在目标屏幕打开 OverlayWindow，以截取的图片作为背景
-8. 用户拖拽选区（选区外半透明蒙版，选区内显示原图）
-9. 松开鼠标：`cgImage.cropping(to: scaledRect)` 裁剪
-10. 写入剪贴板 → 闪屏 → 打开标记编辑器
-11. 按 Esc 取消
-
-> 区域截图本质上是全屏截图的裁剪操作。截图在选屏确认时已完成，用户在静态图上拖选，确保截到的是真实屏幕内容（包括活跃窗口状态、菜单栏等）。
-
-### 窗口截图
-
-5. 关闭所有选屏窗口
-6. `CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, [.bestResolution])` 截取目标窗口（含阴影）
-7. 写入剪贴板 → 闪屏 → 打开标记编辑器
-
-> 窗口检测使用 `CGWindowListCopyWindowInfo` 获取屏幕上所有可见窗口列表（按 Z 序排列），过滤掉自身 PID 和非普通窗口（layer != 0），取第一个包含鼠标位置的窗口。
+编辑器里回车、点完成，或在箭头工具下双击空白，才写出结果。按住 Option 时，剪贴板与文件对调。文件默认放在桌面，文件名 `Screenshot yyyy-MM-dd at HH.mm.ss.png`。直接关闭窗口则丢弃。成功写出后闪屏。
 
 ### 标记编辑器
 
@@ -96,7 +79,7 @@ flowchart LR
    - 选中标记显示 8 个缩放手柄，支持拖动缩放
    - Delete 键删除选中标记，Cmd+Z 撤销；Esc：编辑文字时取消编辑，裁剪拖选时取消选区，有选中时取消选中，否则切回箭头工具（编辑态用 keyDown 本地监控；非编辑态、焦点在工具栏时用窗口级 key 监控，确保文字工具也能退回箭头）
    - 裁剪工具：拖选区域，松开进入预览（选区高亮、其他变暗）；双击或回车确认裁剪，Esc 取消；裁剪后更新画布尺寸、背景图，标注坐标平移、完全在裁剪区外的标注移除，并切回箭头工具
-4. 关闭窗口时：若有标记，在原图像素坐标中渲染合成图并覆盖剪贴板；无标记则保留原图
+4. 确认时：无论有没有标记，都在原图像素坐标中渲染合成图，再按偏好设置写出。直接关闭窗口则什么都不写
 
 > 合成渲染使用与原图同尺寸的 `CGContext`，先绘制原图，再按缩放因子将标记绘制到像素空间。`NSGraphicsContext` 使用 `flipped: true` 确保文字方向正确。
 >
@@ -104,7 +87,7 @@ flowchart LR
 
 ## 坐标系
 
-- **OverlayView**：`isFlipped = true`，坐标原点在左上角，Y 轴向下
+- **截图遮罩 / 标记画布**：`isFlipped = true`，坐标原点在左上角，Y 轴向下
 - **CG Display 坐标**：`CGDisplayCreateImage(rect:)` 使用左上角原点，与 flipped NSView 坐标一致
 - **Retina 缩放**：`CGDisplayCreateImage` 返回像素尺寸的 CGImage，裁剪时需将 points 坐标乘以 `screen.backingScaleFactor`
 - **AppKit vs Quartz**：`NSEvent.mouseLocation` 使用 AppKit 坐标（主屏左下角原点），`kCGWindowBounds` 使用 Quartz 坐标（主屏左上角原点），转换公式：`quartz_y = mainScreenHeight - appkit_y`
@@ -120,13 +103,15 @@ mac-screenshot/
 │   ├── Sources/MacScreenshot/
 │   │   ├── main.swift                  # 入口：NSApplication + 隐藏 Dock
 │   │   ├── AppDelegate.swift           # 托盘菜单 + 选屏/截图流程编排
-│   │   ├── ScreenCapture.swift         # CGDisplayCreateImage 截屏 + 裁剪 + 剪贴板
+│   │   ├── ScreenCapture.swift         # 截屏、裁剪、剪贴板与保存 PNG
 │   │   ├── ScreenPickerWindow.swift    # 选屏透明窗口
 │   │   ├── ScreenPickerView.swift      # 选屏红色边框 / 窗口蓝色边框绘制
 │   │   ├── WindowPicker.swift          # 窗口检测（CGWindowListCopyWindowInfo）+ 截取
-│   │   ├── OverlayWindow.swift         # 区域选区窗口（背景为已截图片）
-│   │   ├── OverlayView.swift           # 选区绘制（蒙版 + 拖拽 + 尺寸信息）
-│   │   ├── FlashWindow.swift           # 截图成功闪屏
+│   │   ├── CaptureSession.swift        # 快捷键截图遮罩：拖选区域 / 单击窗口
+│   │   ├── HotKeyCenter.swift          # Carbon 全局热键
+│   │   ├── Preferences.swift           # 快捷键、保存去向、目录
+│   │   ├── PreferencesWindow.swift     # 偏好设置窗口
+│   │   ├── FlashWindow.swift           # 确认成功后闪屏
 │   │   ├── Annotation.swift            # 标记数据模型 + 绘制/命中检测
 │   │   ├── AnnotationToolbar.swift     # 标记工具栏 UI
 │   │   ├── AnnotationCanvas.swift      # 标记画布交互（绘制/选中/移动/缩放/文字编辑）
@@ -141,10 +126,11 @@ mac-screenshot/
 
 | 决策 | 原因 |
 |------|------|
-| 选屏时不激活 app（不调用 `NSApp.activate`） | 保持其他窗口的焦点状态，截图反映真实屏幕 |
-| `acceptsFirstMouse` 返回 true | 非活跃 app 时首次点击直接作为 mouseDown 传递 |
-| 选屏确认后立即截图，区域模式在静态图上裁剪 | 避免覆盖窗口被截入，确保截到实时屏幕内容 |
-| 窗口背景 `alpha: 0.001` 而非完全透明 | macOS 不向完全透明窗口传递鼠标事件 |
+| 快捷键按下后先截屏，再激活应用 | 激活才能收到点击和 Esc；画面用的是激活前的快照，不会把失焦状态拍进去 |
+| 遮罩窗口设为不透明 | 透明像素上的点击会被系统穿透到下层窗口，导致点了没反应 |
+| 全局热键用 Carbon `RegisterEventHotKey` | 不需要辅助功能权限，而且会吃掉按键，不会传给前台应用 |
+| 确认后才写出，Option 对调去向 | 标注完成前不污染剪贴板；和 Snip 一样用 Option 在剪贴板 / 文件之间切换 |
+| 全屏选屏窗口背景 `alpha: 0.001` | macOS 不向完全透明窗口传递鼠标事件。快捷键遮罩则绘制 0.28 暗色，选区挖空 |
 | 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求 |
 | 窗口截图使用 `CGWindowListCreateImage` | 单独截取指定窗口（含阴影），不受其他窗口遮挡影响 |
 | 窗口检测过滤 layer != 0 | 只选择普通窗口，排除菜单栏、Dock 等系统 UI |
@@ -153,8 +139,7 @@ mac-screenshot/
 
 ## 已知限制
 
-- **裁剪拖动偏移**：预览态下拖动选区后，裁剪结果与实际选区存在偏移（详见 `docs/ISSUES.md`）
 - **屏幕录制权限**：首次使用需在「系统设置 → 隐私与安全性 → 屏幕录制」中手动添加 app 并授权
-- **开发模式 Dock 可见**：`LSUIElement` 在 run.sh 打包的 .app 中生效；直接运行二进制时 Dock 可能显示图标
-- **选屏阶段不支持键盘**：为避免 `NSApp.activate` 改变活跃窗口状态，选屏仅通过鼠标操作
-- **保存到文件**：尚未实现，当前仅写入剪贴板
+- **开发模式 Dock 可见**：`LSUIElement` 在 run.sh 打包的 .app 中生效；直接运行二进制时 Dock 可能显示图标。打开编辑器或偏好设置时会临时变为普通应用，以便显示窗口
+- **全屏选屏仍不抢焦点**：快捷键截图会在快照之后激活应用；菜单里的全屏选屏仍避免 `NSApp.activate`
+- **不做滚动截屏、多选标记、重做**
