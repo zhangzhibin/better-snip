@@ -19,7 +19,8 @@
 | 保存 | 偏好设置可选剪贴板、文件，或两者都保存（文件默认在「图片」）。用户另选的目录会存成安全作用域书签，供沙盒版下次写入。文件格式默认是自动减色的 PNG，也可选无损 PNG、JPEG、WebP。JPEG 和 WebP 可设质量，默认 90%。剪贴板始终是无损 TIFF + PNG。确认时按住 Option，在剪贴板和文件之间对调；已选两者都保存时不变。直接关窗口则丢弃 |
 | 偏好设置 | 快捷键（Delete 关闭热键）、保存去向、文件格式与质量、保存目录。Show in Finder 用访达打开保存目录。每次打开设置都检查屏幕录制权限：已授权显示绿色 Granted，未授权显示橙色 Not granted，并可 Grant Access 打开系统设置。Licenses 展示 libwebp 许可。Restore Defaults 恢复为 ⌘⌥C、剪贴板、减色 PNG、质量 90%、「图片」 |
 | 多屏幕支持 | 遮罩覆盖所有屏幕；拖选限制在按下鼠标的那一块屏幕上 |
-| 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / Preferences… / Quit |
+| 启动界面 | 每次启动在屏幕中央短暂显示应用图标、名称和版本号，约 2 秒后自动关闭。点击画面可提前关掉。菜单 About Simple Screenshot 再次打开，直到点关闭 |
+| 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / About Simple Screenshot / Preferences… / Quit |
 | 闪屏反馈 | 确认并成功写出之后，在目标屏幕显示白色闪光 |
 
 ## 技术架构
@@ -98,7 +99,8 @@ flowchart LR
 ```
 mac-screenshot/
 ├── docs/
-│   └── spec.md                         # 本文档
+│   ├── spec.md                         # 本文档
+│   └── app-store.md                    # App Store 商店介绍
 ├── swift-version/                      # Swift 原生版本（活跃开发）
 │   ├── Package.swift                   # SPM 配置
 │   ├── MacScreenshot.xcodeproj         # App Store 归档工程，开启沙盒
@@ -117,6 +119,7 @@ mac-screenshot/
 │   │   ├── Preferences.swift           # 快捷键、保存去向、格式、质量、目录
 │   │   ├── PreferencesWindow.swift     # 偏好设置窗口
 │   │   ├── FlashWindow.swift           # 确认成功后闪屏
+│   │   ├── AboutWindow.swift           # 启动画面与 About：图标、名称、版本号
 │   │   ├── Annotation.swift            # 标记数据模型 + 绘制/命中检测
 │   │   ├── AnnotationToolbar.swift     # 标记工具栏 UI
 │   │   ├── AnnotationCanvas.swift      # 标记画布交互（绘制/选中/移动/缩放/文字编辑）

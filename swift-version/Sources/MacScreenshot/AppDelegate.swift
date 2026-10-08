@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: Any?
     private var editorWindow: AnnotationEditorWindow?
     private var preferencesWindow: PreferencesWindow?
+    private var aboutWindow: AboutWindow?
     private var captureSession: CaptureSession?
     private var preferencesShown = false
     private var shortcutSuspended = false
@@ -41,6 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let aboutItem = NSMenuItem(title: "About Simple Screenshot", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(showPreferences), keyEquivalent: ",")
         prefsItem.keyEquivalentModifierMask = .command
         prefsItem.target = self
@@ -53,6 +58,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+
+        aboutWindow = AboutWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.aboutWindow?.present(autoDismiss: true)
+        }
     }
 
     // MARK: - 统一截图（拖选 / 点窗口）
@@ -66,6 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if now - lastCaptureUptime < 0.35 { return }
         lastCaptureUptime = now
         guard editorWindow == nil else { return }
+        aboutWindow?.dismiss()
         closeAllPickers()
 
         let session = CaptureSession()
@@ -113,6 +124,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureFullScreen() {
         guard editorWindow == nil, captureSession == nil else { return }
+        aboutWindow?.dismiss()
         closeAllPickers()
 
         for screen in NSScreen.screens {
@@ -195,6 +207,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - 偏好设置
+
+    @objc private func showAbout() {
+        aboutWindow?.present(autoDismiss: false)
+    }
 
     @objc private func showPreferences() {
         if preferencesWindow == nil {
