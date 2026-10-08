@@ -63,11 +63,11 @@ enum ScreenCapture {
         )
     }
 
-    /// 保存 PNG。同一秒内重名时追加序号。失败返回 nil。
-    static func savePNG(_ cgImage: CGImage, to directory: URL) -> URL? {
-        let rep = NSBitmapImageRep(cgImage: cgImage)
-        guard let pngData = rep.representation(using: .png, properties: [:]) else {
-            NSLog("[ScreenCapture] png representation failed")
+    /// 按偏好设置的格式写入文件。同一秒内重名时追加序号。失败返回 nil。
+    static func saveImage(_ cgImage: CGImage, to directory: URL) -> URL? {
+        let format = AppPreferences.imageFormat
+        guard let data = ImageFileWriter.data(for: cgImage, format: format, quality: AppPreferences.imageQuality) else {
+            NSLog("[ScreenCapture] encode failed")
             return nil
         }
         let formatter = DateFormatter()
@@ -80,17 +80,18 @@ enum ScreenCapture {
             NSLog("[ScreenCapture] create directory failed: \(error.localizedDescription)")
             return nil
         }
-        var url = directory.appendingPathComponent("Screenshot \(stamp).png")
+        let ext = format.fileExtension
+        var url = directory.appendingPathComponent("Screenshot \(stamp).\(ext)")
         var index = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = directory.appendingPathComponent("Screenshot \(stamp) \(index).png")
+            url = directory.appendingPathComponent("Screenshot \(stamp) \(index).\(ext)")
             index += 1
         }
         do {
-            try pngData.write(to: url)
+            try data.write(to: url)
             return url
         } catch {
-            NSLog("[ScreenCapture] write png failed: \(error.localizedDescription)")
+            NSLog("[ScreenCapture] write image failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -104,7 +105,7 @@ enum ScreenCapture {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setData(tiffData, forType: .tiff)
-        if let pngData = rep.representation(using: .png, properties: [:]) {
+        if let pngData = ImageFileWriter.losslessPNG(cgImage) {
             pasteboard.setData(pngData, forType: .png)
         }
         return true

@@ -15,8 +15,8 @@
 | 快捷键截图 | 默认 ⌘⌥C。拖选时用蓝白对比边框和角点标出选区；悬停窗口为蓝色边框，单击截取。预览窗口按图片尺寸在屏幕正中打开；图片窄于工具栏时窗口加宽到能放下工具栏，图片仍按原比例居中 |
 | 全屏截图 | 菜单单独入口：选屏（红色边框）→ 截取整屏 → 标记编辑器 |
 | 标记编辑器 | 箭头/矩形/椭圆/直线/手绘/文字/马赛克/裁剪。可调颜色、线宽、虚线、字体。选中后可移动、缩放、删除。回车、完成按钮，或箭头工具下双击空白处确认 |
-| 保存 | 偏好设置可选剪贴板、文件，或两者都保存（文件默认在桌面）。确认时按住 Option，在剪贴板和文件之间对调；已选两者都保存时不变。直接关窗口则丢弃 |
-| 偏好设置 | 快捷键（Delete 关闭热键）、保存去向、保存目录 |
+| 保存 | 偏好设置可选剪贴板、文件，或两者都保存（文件默认在桌面）。文件格式默认是自动减色的 PNG，也可选无损 PNG、JPEG、WebP。JPEG 和 WebP 可设质量，默认 90%。剪贴板始终是无损 TIFF + PNG。确认时按住 Option，在剪贴板和文件之间对调；已选两者都保存时不变。直接关窗口则丢弃 |
+| 偏好设置 | 快捷键（Delete 关闭热键）、保存去向、文件格式与质量、保存目录 |
 | 多屏幕支持 | 遮罩覆盖所有屏幕；拖选限制在按下鼠标的那一块屏幕上 |
 | 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / Preferences… / Quit |
 | 闪屏反馈 | 确认并成功写出之后，在目标屏幕显示白色闪光 |
@@ -59,7 +59,7 @@ flowchart LR
 
 ### 确认与保存
 
-编辑器里回车、点完成，或在箭头工具下双击空白，才写出结果。去向可以是剪贴板、文件，或两者。按住 Option 时，剪贴板与文件对调；已选两者都保存时仍写两处。文件默认放在桌面，文件名 `Screenshot yyyy-MM-dd at HH.mm.ss.png`。直接关闭窗口则丢弃。成功写出后闪屏。保存按钮是窗口的首选按钮。
+编辑器里回车、点完成，或在箭头工具下双击空白，才写出结果。去向可以是剪贴板、文件，或两者。按住 Option 时，剪贴板与文件对调；已选两者都保存时仍写两处。文件默认放在桌面，文件名 `Screenshot yyyy-MM-dd at HH.mm.ss`，扩展名随格式变化（`.png` / `.jpg` / `.webp`）。默认 PNG 会把相近颜色合并成最多 256 色的索引图，并保留透明；颜色本来就不超过 256 时仍然无损。减色后体积没有变小则改写无损 PNG。无损 PNG 保持每个像素。JPEG 和 WebP 使用质量滑杆，默认 90%。剪贴板不跟随文件格式，始终写无损 TIFF + PNG。直接关闭窗口则丢弃。成功写出后闪屏。保存按钮是窗口的首选按钮。
 
 ### 标记编辑器
 
@@ -103,13 +103,14 @@ mac-screenshot/
 │   ├── Sources/MacScreenshot/
 │   │   ├── main.swift                  # 入口：NSApplication + 隐藏 Dock
 │   │   ├── AppDelegate.swift           # 托盘菜单 + 选屏/截图流程编排
-│   │   ├── ScreenCapture.swift         # 截屏、裁剪、剪贴板与保存 PNG
+│   │   ├── ScreenCapture.swift         # 截屏、裁剪、剪贴板与保存文件
+│   │   ├── ImageFileWriter.swift       # PNG 减色、无损 PNG、JPEG、WebP
 │   │   ├── ScreenPickerWindow.swift    # 选屏透明窗口
 │   │   ├── ScreenPickerView.swift      # 选屏红色边框 / 窗口蓝色边框绘制
 │   │   ├── WindowPicker.swift          # 窗口检测（CGWindowListCopyWindowInfo）+ 截取
 │   │   ├── CaptureSession.swift        # 快捷键截图遮罩：拖选区域 / 单击窗口
 │   │   ├── HotKeyCenter.swift          # Carbon 全局热键
-│   │   ├── Preferences.swift           # 快捷键、保存去向、目录
+│   │   ├── Preferences.swift           # 快捷键、保存去向、格式、质量、目录
 │   │   ├── PreferencesWindow.swift     # 偏好设置窗口
 │   │   ├── FlashWindow.swift           # 确认成功后闪屏
 │   │   ├── Annotation.swift            # 标记数据模型 + 绘制/命中检测
@@ -131,7 +132,8 @@ mac-screenshot/
 | 全局热键用 Carbon `RegisterEventHotKey` | 不需要辅助功能权限，而且会吃掉按键，不会传给前台应用 |
 | 确认后才写出，Option 对调剪贴板与文件 | 标注完成前不污染剪贴板；两者都保存时 Option 不改变去向 |
 | 全屏选屏窗口背景 `alpha: 0.001` | macOS 不向完全透明窗口传递鼠标事件。快捷键遮罩则绘制 0.28 暗色，选区挖空 |
-| 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求 |
+| 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求。剪贴板始终无损，不跟随文件格式 |
+| 默认 PNG 做减色而不是固定质量百分比 | 界面截图颜色少，合并相近色就能明显缩小，文字也不像 JPEG 那样发糊。质量滑杆只留给 JPEG 和 WebP |
 | 窗口截图使用 `CGWindowListCreateImage` | 单独截取指定窗口（含阴影），不受其他窗口遮挡影响 |
 | 窗口检测过滤 layer != 0 | 只选择普通窗口，排除菜单栏、Dock 等系统 UI |
 | 编辑器窗口临时切换 `.regular` 激活策略 | agent app（`.accessory`）无法正常显示窗口，编辑器打开时切 `.regular`，关闭时切回 |

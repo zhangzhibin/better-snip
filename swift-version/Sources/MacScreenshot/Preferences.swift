@@ -17,6 +17,24 @@ enum SaveDestination: String {
     }
 }
 
+/// 保存到文件时的格式。PNG 默认做减色压缩；质量只用于 JPEG 和 WebP。
+enum ImageFileFormat: String {
+    case png
+    case losslessPng
+    case jpeg
+    case webp
+
+    var usesQuality: Bool { self == .jpeg || self == .webp }
+
+    var fileExtension: String {
+        switch self {
+        case .png, .losslessPng: return "png"
+        case .jpeg: return "jpg"
+        case .webp: return "webp"
+        }
+    }
+}
+
 enum AppPreferences {
     private static let keyCodeKey = "hotkeyKeyCode"
     private static let modifiersKey = "hotkeyModifiers"
@@ -24,6 +42,8 @@ enum AppPreferences {
     private static let hotkeyEnabledKey = "hotkeyEnabled"
     private static let directoryKey = "saveDirectory"
     private static let destinationKey = "saveDestination"
+    private static let imageFormatKey = "imageFormat"
+    private static let imageQualityKey = "imageQuality"
 
     /// kVK_ANSI_C
     static let defaultKeyCode: UInt16 = 8
@@ -73,6 +93,21 @@ enum AppPreferences {
     static var destination: SaveDestination {
         get { SaveDestination(rawValue: UserDefaults.standard.string(forKey: destinationKey) ?? "") ?? .clipboard }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: destinationKey) }
+    }
+
+    /// 默认是减色 PNG。未设置过时不按 JPEG 质量理解。
+    static var imageFormat: ImageFileFormat {
+        get { ImageFileFormat(rawValue: UserDefaults.standard.string(forKey: imageFormatKey) ?? "") ?? .png }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: imageFormatKey) }
+    }
+
+    /// JPEG / WebP 的质量，1...100。默认 90。
+    static var imageQuality: Int {
+        get {
+            guard UserDefaults.standard.object(forKey: imageQualityKey) != nil else { return 90 }
+            return min(100, max(1, UserDefaults.standard.integer(forKey: imageQualityKey)))
+        }
+        set { UserDefaults.standard.set(min(100, max(1, newValue)), forKey: imageQualityKey) }
     }
 
     /// 未设置过时默认开启。在快捷键栏按 Delete 后关闭，不再响应全局热键。

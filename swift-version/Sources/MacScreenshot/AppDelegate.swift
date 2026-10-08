@@ -184,7 +184,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ok = ScreenCapture.writeToClipboard(image)
         }
         if destination == .file || destination == .both {
-            if ScreenCapture.savePNG(image, to: AppPreferences.saveDirectory) != nil {
+            if ScreenCapture.saveImage(image, to: AppPreferences.saveDirectory) != nil {
                 ok = true
             } else if destination == .file {
                 ok = ScreenCapture.writeToClipboard(image)

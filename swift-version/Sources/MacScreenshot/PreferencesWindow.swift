@@ -8,11 +8,14 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     private let recorder = ShortcutRecorder()
     private let destinationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let formatPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let qualitySlider = NSSlider(value: 90, minValue: 1, maxValue: 100, target: nil, action: nil)
+    private let qualityLabel = NSTextField(labelWithString: "90%")
     private let pathLabel = NSTextField(labelWithString: "")
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 188),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 292),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -23,8 +26,10 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
         let shortcutLabel = NSTextField(labelWithString: "Shortcut")
         let destinationLabel = NSTextField(labelWithString: "Save to")
+        let formatLabel = NSTextField(labelWithString: "Format")
+        let qualityTitle = NSTextField(labelWithString: "Quality")
         let folderLabel = NSTextField(labelWithString: "Folder")
-        for label in [shortcutLabel, destinationLabel, folderLabel] {
+        for label in [shortcutLabel, destinationLabel, formatLabel, qualityTitle, folderLabel] {
             label.alignment = .right
             label.font = .systemFont(ofSize: 13)
         }
@@ -56,6 +61,32 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         case .both: destinationPopup.selectItem(at: 2)
         }
 
+        formatPopup.addItems(withTitles: ["PNG", "Lossless PNG", "JPEG", "WebP"])
+        formatPopup.target = self
+        formatPopup.action = #selector(formatChanged(_:))
+        switch AppPreferences.imageFormat {
+        case .png: formatPopup.selectItem(at: 0)
+        case .losslessPng: formatPopup.selectItem(at: 1)
+        case .jpeg: formatPopup.selectItem(at: 2)
+        case .webp: formatPopup.selectItem(at: 3)
+        }
+
+        qualitySlider.minValue = 1
+        qualitySlider.maxValue = 100
+        qualitySlider.doubleValue = Double(AppPreferences.imageQuality)
+        qualitySlider.isContinuous = true
+        qualitySlider.target = self
+        qualitySlider.action = #selector(qualityChanged(_:))
+        qualityLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        qualityLabel.alignment = .right
+        updateQualityControls()
+
+        let qualityRow = NSStackView(views: [qualitySlider, qualityLabel])
+        qualityRow.orientation = .horizontal
+        qualityRow.alignment = .centerY
+        qualitySlider.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        qualityLabel.setContentHuggingPriority(.required, for: .horizontal)
+
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.font = .systemFont(ofSize: 12)
         pathLabel.textColor = .secondaryLabelColor
@@ -69,13 +100,15 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         folderRow.alignment = .centerY
         pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. Clipboard and File always writes both. Delete in the shortcut field turns the shortcut off.")
+        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
         let grid = NSGridView(views: [
             [shortcutLabel, recorder],
             [destinationLabel, destinationPopup],
+            [formatLabel, formatPopup],
+            [qualityTitle, qualityRow],
             [folderLabel, folderRow],
         ])
         grid.columnSpacing = 12
@@ -109,6 +142,33 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         let values: [SaveDestination] = [.clipboard, .file, .both]
         let index = sender.indexOfSelectedItem
         AppPreferences.destination = index < values.count ? values[index] : .clipboard
+    }
+
+    @objc private func formatChanged(_ sender: NSPopUpButton) {
+        let values: [ImageFileFormat] = [.png, .losslessPng, .jpeg, .webp]
+        let index = sender.indexOfSelectedItem
+        AppPreferences.imageFormat = index < values.count ? values[index] : .png
+        updateQualityControls()
+    }
+
+    @objc private func qualityChanged(_ sender: NSSlider) {
+        AppPreferences.imageQuality = Int(sender.doubleValue.rounded())
+        updateQualityControls()
+    }
+
+    private func updateQualityControls() {
+        let format = AppPreferences.imageFormat
+        qualitySlider.isEnabled = format.usesQuality
+        if format.usesQuality {
+            qualityLabel.stringValue = "\(AppPreferences.imageQuality)%"
+            qualityLabel.textColor = .labelColor
+        } else if format == .png {
+            qualityLabel.stringValue = "Auto"
+            qualityLabel.textColor = .secondaryLabelColor
+        } else {
+            qualityLabel.stringValue = "—"
+            qualityLabel.textColor = .secondaryLabelColor
+        }
     }
 
     @objc private func chooseFolder() {
