@@ -189,7 +189,12 @@ class AnnotationToolbar: NSView {
         mainStack.addArrangedSubview(spacer)
 
         // 关闭（丢弃）+ 保存
-        let closeBtn = makeIconButton(symbol: "xmark.circle", fallback: "✕", tooltip: "Discard & Close")
+        let closeBtn = makeIconButton(symbol: "xmark.circle", fallback: "Cancel", tooltip: "Cancel (Esc)")
+        closeBtn.title = "Cancel"
+        closeBtn.imagePosition = .imageLeading
+        closeBtn.bezelStyle = .rounded
+        closeBtn.setButtonType(.momentaryPushIn)
+        closeBtn.controlSize = .regular
         closeBtn.target = self
         closeBtn.action = #selector(undoTapped)
         mainStack.addArrangedSubview(closeBtn)
