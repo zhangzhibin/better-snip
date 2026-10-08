@@ -123,6 +123,14 @@ enum AppPreferences {
         isHotkeyEnabled = false
     }
 
+    /// 快捷键、保存去向、格式、质量和目录都回到初始值。
+    static func restoreDefaults() {
+        let defaults = UserDefaults.standard
+        for key in [keyCodeKey, modifiersKey, characterKey, hotkeyEnabledKey, directoryKey, destinationKey, imageFormatKey, imageQualityKey] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     static func shortcutDisplay(character: String = hotkeyCharacter, modifiers: NSEvent.ModifierFlags = hotkeyModifiers) -> String {
         guard isHotkeyEnabled else { return "None" }
         var text = ""

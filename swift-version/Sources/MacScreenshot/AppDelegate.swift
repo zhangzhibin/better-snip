@@ -214,6 +214,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateActivationPolicy()
         preferencesWindow?.center()
         preferencesWindow?.makeKeyAndOrderFront(nil)
+        preferencesWindow?.refreshShortcutField()
+        // 打开时不要把焦点放进快捷键栏，否则会显示成待输入而不是当前快捷键。
+        preferencesWindow?.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

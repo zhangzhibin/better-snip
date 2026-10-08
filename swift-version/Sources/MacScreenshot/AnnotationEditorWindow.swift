@@ -88,11 +88,11 @@ class AnnotationEditorWindow: NSWindow {
         self.delegate = self
         lockWindow(canvasSize: NSSize(width: canvasW, height: canvasH))
 
-        // Esc / Enter：非编辑态时也能响应（如焦点在工具栏）
+        // Esc 丢弃本次截图，与关闭按钮相同。Enter 确认保存。
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self, self.isKeyWindow else { return event }
             if event.keyCode == 53 {
-                self.canvas.performEscapeAction()
+                self.discardAndClose()
                 return nil
             }
             if event.keyCode == 36 {

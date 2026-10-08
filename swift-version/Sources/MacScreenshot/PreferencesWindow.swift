@@ -15,7 +15,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 292),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -104,6 +104,10 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
+        let restoreButton = NSButton(title: "Restore Defaults", target: self, action: #selector(restoreDefaults))
+        restoreButton.bezelStyle = .rounded
+        restoreButton.translatesAutoresizingMaskIntoConstraints = false
+
         let grid = NSGridView(views: [
             [shortcutLabel, recorder],
             [destinationLabel, destinationPopup],
@@ -120,6 +124,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         guard let content = contentView else { return }
         content.addSubview(grid)
         content.addSubview(hint)
+        content.addSubview(restoreButton)
         recorder.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             recorder.widthAnchor.constraint(equalToConstant: 180),
@@ -130,12 +135,18 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
             hint.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 16),
             hint.leadingAnchor.constraint(equalTo: grid.leadingAnchor),
             hint.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
+            restoreButton.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 16),
+            restoreButton.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
         ])
     }
 
     func windowWillClose(_ notification: Notification) {
         onSuspendShortcut?(false)
         onClose?()
+    }
+
+    func refreshShortcutField() {
+        recorder.display = AppPreferences.shortcutDisplay()
     }
 
     @objc private func destinationChanged(_ sender: NSPopUpButton) {
@@ -171,6 +182,27 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         }
     }
 
+    @objc private func restoreDefaults() {
+        AppPreferences.restoreDefaults()
+        recorder.display = AppPreferences.shortcutDisplay()
+        switch AppPreferences.destination {
+        case .clipboard: destinationPopup.selectItem(at: 0)
+        case .file: destinationPopup.selectItem(at: 1)
+        case .both: destinationPopup.selectItem(at: 2)
+        }
+        switch AppPreferences.imageFormat {
+        case .png: formatPopup.selectItem(at: 0)
+        case .losslessPng: formatPopup.selectItem(at: 1)
+        case .jpeg: formatPopup.selectItem(at: 2)
+        case .webp: formatPopup.selectItem(at: 3)
+        }
+        qualitySlider.doubleValue = Double(AppPreferences.imageQuality)
+        updateQualityControls()
+        updatePathLabel()
+        HotKeyCenter.shared.registerCurrent()
+        onShortcutChanged?()
+    }
+
     @objc private func chooseFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -197,6 +229,9 @@ private final class ShortcutRecorder: NSView {
     var onFocus: ((Bool) -> Void)?
 
     private var lastTimestamp: TimeInterval = -1
+    /// 只有点进输入框才进入录制。窗口打开时系统可能把焦点丢进来，那种情况不进入录制。
+    private var isRecording = false
+    private var keyMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -205,14 +240,17 @@ private final class ShortcutRecorder: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
+        beginRecording()
     }
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
-        if ok {
-            onFocus?(true)
-            needsDisplay = true
+        if ok, !isRecording {
+            // 偏好设置刚打开时不要停在录制态，否则快捷键看起来是空的。
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isRecording else { return }
+                self.window?.makeFirstResponder(nil)
+            }
         }
         return ok
     }
@@ -220,33 +258,35 @@ private final class ShortcutRecorder: NSView {
     override func resignFirstResponder() -> Bool {
         let ok = super.resignFirstResponder()
         if ok {
-            onFocus?(false)
-            needsDisplay = true
+            endRecording()
         }
         return ok
     }
 
     override func keyDown(with event: NSEvent) {
+        guard isRecording else {
+            super.keyDown(with: event)
+            return
+        }
         record(event)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self else { return false }
+        guard isRecording, window?.firstResponder === self else { return false }
         record(event)
         return true
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let focused = window?.firstResponder === self
         let box = bounds.insetBy(dx: 1, dy: 1)
         let path = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
-        (focused ? NSColor.controlAccentColor.withAlphaComponent(0.12) : NSColor.controlBackgroundColor).setFill()
+        (isRecording ? NSColor.controlAccentColor.withAlphaComponent(0.12) : NSColor.controlBackgroundColor).setFill()
         path.fill()
-        (focused ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
-        path.lineWidth = focused ? 2 : 1
+        (isRecording ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+        path.lineWidth = isRecording ? 2 : 1
         path.stroke()
 
-        let text = focused ? "Type shortcut" : display
+        let text = isRecording ? "Type shortcut" : display
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13),
             .foregroundColor: NSColor.labelColor,
@@ -256,12 +296,41 @@ private final class ShortcutRecorder: NSView {
         (text as NSString).draw(at: origin, withAttributes: attrs)
     }
 
+    private func beginRecording() {
+        guard !isRecording else { return }
+        isRecording = true
+        needsDisplay = true
+        onFocus?(true)
+        window?.makeFirstResponder(self)
+        if keyMonitor == nil {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, self.isRecording, self.window?.isKeyWindow == true else { return event }
+                self.record(event)
+                return nil
+            }
+        }
+    }
+
+    private func endRecording() {
+        let wasRecording = isRecording
+        isRecording = false
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+        if wasRecording {
+            onFocus?(false)
+        }
+        needsDisplay = true
+    }
+
     private func record(_ event: NSEvent) {
         if event.timestamp == lastTimestamp { return }
         lastTimestamp = event.timestamp
 
         if event.keyCode == 51 || event.keyCode == 117 {
             onReset?()
+            finishRecording()
             return
         }
 
@@ -270,5 +339,13 @@ private final class ShortcutRecorder: NSView {
         guard let raw = event.charactersIgnoringModifiers?.lowercased(), raw.count == 1,
               let character = raw.first, character.isLetter || character.isNumber else { return }
         onChange?(event.keyCode, modifiers, String(character))
+        finishRecording()
+    }
+
+    /// 延后结束，避免在按键监控的回调里拆掉监控本身。
+    private func finishRecording() {
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.makeFirstResponder(nil)
+        }
     }
 }
