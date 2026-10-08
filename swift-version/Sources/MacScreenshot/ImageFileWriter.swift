@@ -1,3 +1,4 @@
+import Clibwebp
 import Cocoa
 import Compression
 import ImageIO
@@ -22,8 +23,26 @@ enum ImageFileWriter {
         case .jpeg:
             return imageIOData(image, type: UTType.jpeg.identifier as CFString, quality: quality)
         case .webp:
-            return imageIOData(image, type: UTType.webP.identifier as CFString, quality: quality)
+            return webpData(image, quality: quality)
         }
+    }
+
+    /// 系统 ImageIO 不能写 WebP，用 libwebp 编码。
+    private static func webpData(_ image: CGImage, quality: Int) -> Data? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0, width <= 20_000, height <= 20_000,
+              let pixels = straightRGBA(image, width: width, height: height) else { return nil }
+        var output: UnsafeMutablePointer<UInt8>?
+        let qualityFactor = Float(min(100, max(1, quality)))
+        let size = pixels.withUnsafeBufferPointer { buffer -> Int in
+            guard let base = buffer.baseAddress else { return 0 }
+            return WebPEncodeRGBA(base, Int32(width), Int32(height), Int32(width * 4), qualityFactor, &output)
+        }
+        guard size > 0, let output else { return nil }
+        let data = Data(bytes: output, count: size)
+        WebPFree(output)
+        return data
     }
 
     private static func imageIOData(_ image: CGImage, type: CFString, quality: Int) -> Data? {

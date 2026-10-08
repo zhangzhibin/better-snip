@@ -100,11 +100,12 @@ mac-screenshot/
 │   └── spec.md                         # 本文档
 ├── swift-version/                      # Swift 原生版本（活跃开发）
 │   ├── Package.swift                   # SPM 配置
+│   ├── Vendor/libwebp/                 # libwebp 1.5.0，仅用于写出 WebP
 │   ├── Sources/MacScreenshot/
 │   │   ├── main.swift                  # 入口：NSApplication + 隐藏 Dock
 │   │   ├── AppDelegate.swift           # 托盘菜单 + 选屏/截图流程编排
 │   │   ├── ScreenCapture.swift         # 截屏、裁剪、剪贴板与保存文件
-│   │   ├── ImageFileWriter.swift       # PNG 减色、无损 PNG、JPEG、WebP
+│   │   ├── ImageFileWriter.swift       # PNG 减色、无损 PNG、JPEG、WebP（WebP 用 libwebp，系统 ImageIO 不能写）
 │   │   ├── ScreenPickerWindow.swift    # 选屏透明窗口
 │   │   ├── ScreenPickerView.swift      # 选屏红色边框 / 窗口蓝色边框绘制
 │   │   ├── WindowPicker.swift          # 窗口检测（CGWindowListCopyWindowInfo）+ 截取
@@ -134,6 +135,7 @@ mac-screenshot/
 | 全屏选屏窗口背景 `alpha: 0.001` | macOS 不向完全透明窗口传递鼠标事件。快捷键遮罩则绘制 0.28 暗色，选区挖空 |
 | 剪贴板同时写入 TIFF + PNG | 兼容不同应用的粘贴格式需求。剪贴板始终无损，不跟随文件格式 |
 | 默认 PNG 做减色而不是固定质量百分比 | 界面截图颜色少，合并相近色就能明显缩小，文字也不像 JPEG 那样发糊。质量滑杆只留给 JPEG 和 WebP |
+| WebP 用内置 libwebp 编码 | 当前系统的 ImageIO 能写 JPEG，但不能创建 WebP 目标 |
 | 窗口截图使用 `CGWindowListCreateImage` | 单独截取指定窗口（含阴影），不受其他窗口遮挡影响 |
 | 窗口检测过滤 layer != 0 | 只选择普通窗口，排除菜单栏、Dock 等系统 UI |
 | 编辑器窗口临时切换 `.regular` 激活策略 | agent app（`.accessory`）无法正常显示窗口，编辑器打开时切 `.regular`，关闭时切回 |

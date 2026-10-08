@@ -5,8 +5,24 @@ let package = Package(
     name: "MacScreenshot",
     platforms: [.macOS(.v12)],
     targets: [
+        .target(
+            name: "Clibwebp",
+            path: "Vendor/libwebp",
+            exclude: [
+                "COPYING",
+                "PATENTS",
+                "src/demux",
+                "src/mux",
+            ],
+            sources: ["src", "sharpyuv"],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("."),
+            ]
+        ),
         .executableTarget(
             name: "MacScreenshot",
+            dependencies: ["Clibwebp"],
             path: "Sources/MacScreenshot",
             linkerSettings: [
                 .linkedFramework("Cocoa"),
