@@ -12,10 +12,12 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
     private let qualitySlider = NSSlider(value: 90, minValue: 1, maxValue: 100, target: nil, action: nil)
     private let qualityLabel = NSTextField(labelWithString: "90%")
     private let pathLabel = NSTextField(labelWithString: "")
+    private let screenRecordingStatus = NSTextField(labelWithString: "")
+    private let screenRecordingButton = NSButton(title: "Grant Access…", target: nil, action: nil)
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 380),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -29,7 +31,8 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         let formatLabel = NSTextField(labelWithString: "Format")
         let qualityTitle = NSTextField(labelWithString: "Quality")
         let folderLabel = NSTextField(labelWithString: "Folder")
-        for label in [shortcutLabel, destinationLabel, formatLabel, qualityTitle, folderLabel] {
+        let screenRecordingTitle = NSTextField(labelWithString: "Screen Recording")
+        for label in [shortcutLabel, destinationLabel, formatLabel, qualityTitle, folderLabel, screenRecordingTitle] {
             label.alignment = .right
             label.font = .systemFont(ofSize: 13)
         }
@@ -94,11 +97,22 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
         let chooseButton = NSButton(title: "Choose…", target: self, action: #selector(chooseFolder))
         chooseButton.bezelStyle = .rounded
+        let revealButton = NSButton(title: "Show in Finder", target: self, action: #selector(revealFolder))
+        revealButton.bezelStyle = .rounded
 
-        let folderRow = NSStackView(views: [pathLabel, chooseButton])
+        let folderRow = NSStackView(views: [pathLabel, chooseButton, revealButton])
         folderRow.orientation = .horizontal
         folderRow.alignment = .centerY
         pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        screenRecordingStatus.font = .systemFont(ofSize: 13)
+        screenRecordingButton.bezelStyle = .rounded
+        screenRecordingButton.target = self
+        screenRecordingButton.action = #selector(grantScreenRecording)
+        let screenRecordingRow = NSStackView(views: [screenRecordingStatus, screenRecordingButton])
+        screenRecordingRow.orientation = .horizontal
+        screenRecordingRow.alignment = .centerY
+        updateScreenRecordingControls()
 
         let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
         hint.font = .systemFont(ofSize: 11)
@@ -114,6 +128,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
             [formatLabel, formatPopup],
             [qualityTitle, qualityRow],
             [folderLabel, folderRow],
+            [screenRecordingTitle, screenRecordingRow],
         ])
         grid.columnSpacing = 12
         grid.rowSpacing = 12
@@ -145,8 +160,13 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         onClose?()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        updateScreenRecordingControls()
+    }
+
     func refreshShortcutField() {
         recorder.display = AppPreferences.shortcutDisplay()
+        updateScreenRecordingControls()
     }
 
     @objc private func destinationChanged(_ sender: NSPopUpButton) {
@@ -201,6 +221,31 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         updatePathLabel()
         HotKeyCenter.shared.registerCurrent()
         onShortcutChanged?()
+    }
+
+    /// 先向系统申请，让应用出现在屏幕录制列表里；未授权时再打开对应设置页。开关只能由用户自己打开。
+    @objc private func grantScreenRecording() {
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+        }
+        updateScreenRecordingControls()
+        guard !CGPreflightScreenCaptureAccess(),
+              let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func updateScreenRecordingControls() {
+        let granted = CGPreflightScreenCaptureAccess()
+        screenRecordingStatus.stringValue = granted ? "Granted" : "Not granted"
+        screenRecordingStatus.textColor = granted ? .systemGreen : .systemOrange
+        screenRecordingButton.isHidden = granted
+    }
+
+    /// 在访达中打开保存目录，方便直接找到截图。目录还不存在时打开上一级。
+    @objc private func revealFolder() {
+        let url = AppPreferences.saveDirectory
+        let target = FileManager.default.fileExists(atPath: url.path) ? url : url.deletingLastPathComponent()
+        NSWorkspace.shared.open(target)
     }
 
     @objc private func chooseFolder() {
