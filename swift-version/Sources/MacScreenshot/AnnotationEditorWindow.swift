@@ -5,48 +5,46 @@ class AnnotationEditorWindow: NSWindow {
     private var originalImage: CGImage
     private let canvas: AnnotationCanvas
     private let annotationToolbar: AnnotationToolbar
+    private let hostScreen: NSScreen
     private var escKeyMonitor: Any?
     var onClose: (() -> Void)?
     /// 用户确认后交出合成图。直接关窗口不会调用。
     var onSave: ((CGImage) -> Void)?
 
-    /// anchor 为截图在屏幕上的 AppKit 矩形。窗口尽量盖住这块区域，标注就留在选区上。
+    /// 预览窗口按图片比例在屏幕正中打开。anchor 保留是为了兼容调用方，不参与布局。
     init(image: CGImage, screen: NSScreen, anchor: NSRect? = nil) {
         self.originalImage = image
+        self.hostScreen = screen
+        _ = anchor
 
-        let visible = screen.visibleFrame
-        let maxW = visible.width * 0.9
-        let maxH = visible.height * 0.9
-        let imgW = CGFloat(image.width) / screen.backingScaleFactor
-        let imgH = CGFloat(image.height) / screen.backingScaleFactor
-        let scale = min(1.0, min(maxW / imgW, (maxH - AnnotationToolbar.toolbarHeight) / imgH))
-        let canvasW = imgW * scale
-        let canvasH = imgH * scale
+        let fitted = Self.fittedContentSize(for: image, on: screen)
+        let canvasW = fitted.width
+        let canvasH = fitted.height
         let winW = canvasW
         let winH = canvasH + AnnotationToolbar.toolbarHeight
-
-        // 画布在内容区底部。让画布中心对齐选区；没有选区时在可见区域内居中。
-        let origin: NSPoint
-        if let anchor {
-            origin = NSPoint(x: anchor.midX - winW / 2, y: anchor.midY - canvasH / 2)
-        } else {
-            origin = NSPoint(x: visible.midX - winW / 2, y: visible.midY - winH / 2)
-        }
-        let winRect = NSRect(x: origin.x, y: origin.y, width: winW, height: winH)
+        let visible = screen.visibleFrame
+        let winRect = NSRect(
+            x: visible.midX - winW / 2,
+            y: visible.midY - winH / 2,
+            width: winW,
+            height: winH
+        )
 
         self.annotationToolbar = AnnotationToolbar(frame: NSRect(x: 0, y: 0, width: winW, height: AnnotationToolbar.toolbarHeight))
         self.canvas = AnnotationCanvas(frame: NSRect(x: 0, y: 0, width: canvasW, height: canvasH))
 
         super.init(
             contentRect: winRect,
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
 
         self.title = "Screenshot Markup"
-        self.minSize = NSSize(width: 240, height: 160)
         self.isReleasedWhenClosed = false
+        let locked = frameRect(forContentRect: NSRect(origin: .zero, size: NSSize(width: winW, height: winH))).size
+        self.minSize = locked
+        self.maxSize = locked
 
         canvas.backgroundImage = image
         canvas.onToolChangeRequested = { [weak self] tool in
@@ -60,21 +58,14 @@ class AnnotationEditorWindow: NSWindow {
         }
         annotationToolbar.delegate = self
 
-        // 布局：顶部工具栏 + 下方画布（包裹在 ScrollView 中）
+        // 工具栏在上，画布铺满剩余区域，尺寸与图片显示大小一致。
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: winW, height: winH))
         contentView.wantsLayer = true
 
         annotationToolbar.translatesAutoresizingMaskIntoConstraints = false
+        canvas.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(annotationToolbar)
-
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = canvas
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .windowBackgroundColor
-        contentView.addSubview(scrollView)
+        contentView.addSubview(canvas)
 
         self.contentView = contentView
 
@@ -84,17 +75,14 @@ class AnnotationEditorWindow: NSWindow {
             annotationToolbar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             annotationToolbar.heightAnchor.constraint(equalToConstant: AnnotationToolbar.toolbarHeight),
 
-            scrollView.topAnchor.constraint(equalTo: annotationToolbar.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            canvas.topAnchor.constraint(equalTo: annotationToolbar.bottomAnchor),
+            canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
 
-        // canvas 尺寸 = 逻辑像素尺寸
-        canvas.setFrameSize(NSSize(width: imgW, height: imgH))
-
         self.delegate = self
-        clampIntoVisibleFrame(visible)
+        centerInVisibleFrame()
 
         // Esc / Enter：非编辑态时也能响应（如焦点在工具栏）
         escKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -113,16 +101,36 @@ class AnnotationEditorWindow: NSWindow {
         }
     }
 
-    /// contentRect 不含标题栏，初始化后再把整窗（含标题栏）收进可见区域。
-    private func clampIntoVisibleFrame(_ visible: NSRect) {
-        var frame = self.frame
-        if frame.width > visible.width { frame.size.width = visible.width }
-        if frame.height > visible.height { frame.size.height = visible.height }
-        if frame.maxX > visible.maxX { frame.origin.x -= frame.maxX - visible.maxX }
-        if frame.minX < visible.minX { frame.origin.x = visible.minX }
-        if frame.maxY > visible.maxY { frame.origin.y -= frame.maxY - visible.maxY }
-        if frame.minY < visible.minY { frame.origin.y = visible.minY }
-        setFrame(frame, display: false)
+    /// 把图片缩放到屏幕可见区域的 90% 以内，返回画布点尺寸（不含工具栏）。
+    private static func fittedContentSize(for image: CGImage, on screen: NSScreen) -> NSSize {
+        let visible = screen.visibleFrame
+        let imgW = max(CGFloat(image.width) / screen.backingScaleFactor, 1)
+        let imgH = max(CGFloat(image.height) / screen.backingScaleFactor, 1)
+        let maxW = visible.width * 0.9
+        let maxH = max((visible.height - 28) * 0.9 - AnnotationToolbar.toolbarHeight, 1)
+        let fit = min(1, min(maxW / imgW, maxH / imgH))
+        return NSSize(width: imgW * fit, height: imgH * fit)
+    }
+
+    /// 把窗口内容锁成「画布 + 工具栏」，并放到屏幕正中。
+    private func lockWindow(canvasSize: NSSize) {
+        let content = NSSize(width: canvasSize.width, height: canvasSize.height + AnnotationToolbar.toolbarHeight)
+        setContentSize(content)
+        let frameSize = frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
+        minSize = frameSize
+        maxSize = frameSize
+        centerInVisibleFrame()
+    }
+
+    private func centerInVisibleFrame() {
+        let visible = hostScreen.visibleFrame
+        var origin = NSPoint(
+            x: visible.midX - frame.width / 2,
+            y: visible.midY - frame.height / 2
+        )
+        origin.x = min(max(origin.x, visible.minX), visible.maxX - frame.width)
+        origin.y = min(max(origin.y, visible.minY), visible.maxY - frame.height)
+        setFrameOrigin(origin)
     }
 
     deinit {
@@ -187,16 +195,16 @@ class AnnotationEditorWindow: NSWindow {
         originalImage = cropped
         canvas.backgroundImage = cropped
 
-        let newW = CGFloat(cropped.width) / scaleX
-        let newH = CGFloat(cropped.height) / scaleY
-        canvas.setFrameSize(NSSize(width: newW, height: newH))
-        canvas.needsDisplay = true
-
         canvas.annotations.removeAll { !$0.frame.intersects(rect) }
         for ann in canvas.annotations {
             ann.move(by: NSSize(width: -rect.origin.x, height: -rect.origin.y))
         }
 
+        // 沿用当前显示比例缩小窗口，标注坐标不用再换算。
+        let newW = max(CGFloat(cropped.width) / scaleX, 1)
+        let newH = max(CGFloat(cropped.height) / scaleY, 1)
+        lockWindow(canvasSize: NSSize(width: newW, height: newH))
+        canvas.needsDisplay = true
         annotationToolbar.selectTool(.arrow)
     }
 

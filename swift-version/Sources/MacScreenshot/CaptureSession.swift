@@ -363,10 +363,7 @@ private final class CaptureOverlayView: NSView {
 
         if let selection = selectionRect, selection.width >= 1, selection.height >= 1 {
             punch(selection)
-            NSColor.white.setStroke()
-            let border = NSBezierPath(rect: selection)
-            border.lineWidth = 2
-            border.stroke()
+            drawManualSelectionBorder(selection)
             if let sizeLabel { drawLabel(sizeLabel, near: selection) }
         } else if let highlight = windowHighlight?.intersection(bounds), highlight.width > 1, highlight.height > 1 {
             punch(highlight)
@@ -409,6 +406,45 @@ private final class CaptureOverlayView: NSView {
         ctx.clip(to: flipped)
         ctx.draw(image, in: bounds)
         ctx.restoreGState()
+    }
+
+    /// 蓝、白、黑三层边框加角点，浅色和深色画面上都能看清选区。
+    private func drawManualSelectionBorder(_ rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.9).setStroke()
+        let outer = NSBezierPath(rect: rect.insetBy(dx: -2, dy: -2))
+        outer.lineWidth = 2
+        outer.stroke()
+
+        NSColor.systemBlue.setStroke()
+        let main = NSBezierPath(rect: rect)
+        main.lineWidth = 3
+        main.stroke()
+
+        NSColor.white.setStroke()
+        let inner = NSBezierPath(rect: rect.insetBy(dx: 2, dy: 2))
+        inner.lineWidth = 1.5
+        inner.stroke()
+
+        let handle: CGFloat = 10
+        let corners = [
+            NSPoint(x: rect.minX, y: rect.minY),
+            NSPoint(x: rect.midX, y: rect.minY),
+            NSPoint(x: rect.maxX, y: rect.minY),
+            NSPoint(x: rect.minX, y: rect.midY),
+            NSPoint(x: rect.maxX, y: rect.midY),
+            NSPoint(x: rect.minX, y: rect.maxY),
+            NSPoint(x: rect.midX, y: rect.maxY),
+            NSPoint(x: rect.maxX, y: rect.maxY),
+        ]
+        for point in corners {
+            let box = NSRect(x: point.x - handle / 2, y: point.y - handle / 2, width: handle, height: handle)
+            NSColor.white.setFill()
+            NSBezierPath(rect: box).fill()
+            NSColor.systemBlue.setStroke()
+            let stroke = NSBezierPath(rect: box)
+            stroke.lineWidth = 1.5
+            stroke.stroke()
+        }
     }
 
     private func drawLabel(_ text: String, near rect: NSRect) {
