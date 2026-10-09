@@ -5,12 +5,19 @@
 - **名称**：Simple Snip
 - **Bundle ID**：`com.cloudcr.simplescreenshot`
 - **SKU**：simplesnip
+- **版权**：2026 Zhibin Zhang
+- **价格**：免费（价格等级 0）
+- **隐私**：不收集数据。仍需填写隐私政策网址和技术支持网址。
 
 ## 英语（美国）
 
 ### 副标题
 
-Native screenshots, no Rosetta
+Screenshots only. No network.
+
+### 关键词
+
+screenshot,capture,annotate,clipboard,markup,screen,window,region,png,jpeg,webp,crop,offline
 
 ### 宣传文本
 
@@ -36,11 +43,25 @@ Features:
 
 Screen Recording permission is required to capture the screen.
 
+### 此版本的新增内容
+
+Initial release.
+
+### 审核备注
+
+Simple Snip is a menu bar app and does not show a Dock icon.
+
+1. Launch the app. After a short splash, use the camera icon in the menu bar.
+2. Screen Recording is required. If Preferences shows Not granted, click Grant Access, allow it in System Settings, then quit and reopen the app.
+3. Press Command-Option-C, or choose Capture. Drag a region, or hover a window and click.
+4. Draw a mark in the preview, then click Save. The default destination is the clipboard. Esc or Cancel discards the image.
+5. The app does not use the network and does not collect data.
+
 ## 简体中文（稍后添加）
 
 ### 副标题
 
-原生截图，无需安装 Rosetta
+极简截图，不需要联网，没有额外功能
 
 ### 宣传文本
 
