@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="Simple Screenshot"
+APP_NAME="Simple Snip"
 BINARY_NAME="MacScreenshot"
 BUILD_DIR=".build/release"
 APP_DIR=".build/${APP_NAME}.app"

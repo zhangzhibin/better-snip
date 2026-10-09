@@ -1,8 +1,8 @@
-# Simple Screenshot — 产品与技术规格
+# Simple Snip — 产品与技术规格
 
 ## 概述
 
-极简 macOS 截图工具 Simple Screenshot，用来替代已停更、仅有 Intel 版本的 Snip。只做截图和标注，不含滚动截屏等复杂功能。应用启动后仅在系统菜单栏显示托盘图标。默认用全局快捷键调起一次截图：拖选区域，或悬停窗口后单击。截图落在选区上的标记编辑器里，确认后按偏好设置写入剪贴板、文件，或两者都写。
+极简 macOS 截图工具 Simple Snip，用来替代已停更、仅有 Intel 版本的 Snip。只做截图和标注，不含滚动截屏等复杂功能。应用启动后仅在系统菜单栏显示托盘图标。默认用全局快捷键调起一次截图：拖选区域，或悬停窗口后单击。截图落在选区上的标记编辑器里，确认后按偏好设置写入剪贴板、文件，或两者都写。
 
 - **平台**：macOS 12+
 - **Bundle ID**：`com.cloudcr.simplescreenshot`
@@ -19,8 +19,8 @@
 | 保存 | 偏好设置可选剪贴板、文件，或两者都保存（文件默认在「图片」）。用户另选的目录会存成安全作用域书签，供沙盒版下次写入。文件格式默认是自动减色的 PNG，也可选无损 PNG、JPEG、WebP。JPEG 和 WebP 可设质量，默认 90%。剪贴板始终是无损 TIFF + PNG。确认时按住 Option，在剪贴板和文件之间对调；已选两者都保存时不变。直接关窗口则丢弃 |
 | 偏好设置 | 快捷键（Delete 关闭热键）、保存去向、文件格式与质量、保存目录。Show in Finder 用访达打开保存目录。每次打开设置都检查屏幕录制权限：已授权显示绿色 Granted，未授权显示橙色 Not granted，并可 Grant Access 打开系统设置。Licenses 展示 libwebp 许可。Restore Defaults 恢复为 ⌘⌥C、剪贴板、减色 PNG、质量 90%、「图片」 |
 | 多屏幕支持 | 遮罩覆盖所有屏幕；拖选限制在按下鼠标的那一块屏幕上 |
-| 启动界面 | 每次启动在屏幕中央短暂显示应用图标、名称和版本号，约 2 秒后自动关闭。点击画面可提前关掉。菜单 About Simple Screenshot 再次打开，直到点关闭 |
-| 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / About Simple Screenshot / Preferences… / Quit |
+| 启动界面 | 每次启动在屏幕中央短暂显示应用图标、名称和版本号，约 2 秒后自动关闭。点击画面可提前关掉。菜单 About Simple Snip 再次打开，直到点关闭 |
+| 系统托盘 | 菜单栏图标。菜单：Capture / Capture Full Screen / About Simple Snip / Preferences… / Quit |
 | 闪屏反馈 | 确认并成功写出之后，在目标屏幕显示白色闪光 |
 
 ## 技术架构
@@ -124,7 +124,7 @@ mac-screenshot/
 │   │   ├── AnnotationToolbar.swift     # 标记工具栏 UI
 │   │   ├── AnnotationCanvas.swift      # 标记画布交互（绘制/选中/移动/缩放/文字编辑）
 │   │   └── AnnotationEditorWindow.swift # 标记编辑器窗口 + 合成渲染
-│   ├── run.sh                          # 编译 + 打包为 Simple Screenshot.app + 运行
+│   ├── run.sh                          # 编译 + 打包为 Simple Snip.app + 运行
 │   └── README.md
 └── tauri-version/                      # Tauri 版本（已归档）
     └── ...

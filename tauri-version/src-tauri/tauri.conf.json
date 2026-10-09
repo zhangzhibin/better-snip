@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Mac Screenshot",
+  "productName": "Simple Snip",
   "version": "0.1.0",
   "identifier": "com.macscreenshot",
   "build": {
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Mac Screenshot",
+        "title": "Simple Snip",
         "url": "index.html",
         "width": 320,
         "height": 140,

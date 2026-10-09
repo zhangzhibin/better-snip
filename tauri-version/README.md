@@ -1,4 +1,4 @@
-# Mac Screenshot
+# Simple Snip
 
 极简 Mac 截图工具：菜单调起 → 选区 → 原生截屏 → 剪贴板（可选保存文件待加）。
 

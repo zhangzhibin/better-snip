@@ -21,7 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            if let img = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot") {
+            if let img = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Simple Snip") {
                 img.isTemplate = true
                 button.image = img
             } else {
@@ -42,7 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let aboutItem = NSMenuItem(title: "About Simple Screenshot", action: #selector(showAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About Simple Snip", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
 

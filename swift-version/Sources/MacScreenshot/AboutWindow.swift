@@ -39,7 +39,7 @@ final class AboutWindow: NSPanel {
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
 
-        let nameLabel = NSTextField(labelWithString: "Simple Screenshot")
+        let nameLabel = NSTextField(labelWithString: "Simple Snip")
         nameLabel.font = .systemFont(ofSize: 26, weight: .medium)
         nameLabel.textColor = .white
 

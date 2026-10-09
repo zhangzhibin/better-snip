@@ -9,7 +9,7 @@
     "dev:vite": "vite",
     "build:vite": "vite build",
     "icon": "node scripts/generate-icon.js",
-    "dev:app": "cd src-tauri && cargo build && open \"../dev-app/Mac Screenshot Dev.app\""
+    "dev:app": "cd src-tauri && cargo build && open \"../dev-app/Simple Snip Dev.app\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",

@@ -43,7 +43,7 @@ class AnnotationEditorWindow: NSWindow {
             defer: false
         )
 
-        self.title = "Screenshot Markup"
+        self.title = "Simple Snip"
         self.isReleasedWhenClosed = false
 
         canvas.backgroundImage = image

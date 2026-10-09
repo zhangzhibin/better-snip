@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "F10000000000000000000007"
-               BuildableName = "Simple Screenshot.app"
+               BuildableName = "Simple Snip.app"
                BlueprintName = "MacScreenshot"
                ReferencedContainer = "container:MacScreenshot.xcodeproj">
             </BuildableReference>
@@ -44,7 +44,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F10000000000000000000007"
-            BuildableName = "Simple Screenshot.app"
+            BuildableName = "Simple Snip.app"
             BlueprintName = "MacScreenshot"
             ReferencedContainer = "container:MacScreenshot.xcodeproj">
          </BuildableReference>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F10000000000000000000007"
-            BuildableName = "Simple Screenshot.app"
+            BuildableName = "Simple Snip.app"
             BlueprintName = "MacScreenshot"
             ReferencedContainer = "container:MacScreenshot.xcodeproj">
          </BuildableReference>

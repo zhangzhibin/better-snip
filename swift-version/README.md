@@ -1,4 +1,4 @@
-# Mac Screenshot — Swift 原生版本
+# Simple Snip — Swift 原生版本
 
 使用 Swift + AppKit 重写的 macOS 原生截图工具。
 

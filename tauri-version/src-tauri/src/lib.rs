@@ -481,7 +481,7 @@ pub fn run() {
                 });
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
-                .tooltip("Mac Screenshot");
+                .tooltip("Simple Snip");
             if let Some(ref icon) = tray_icon {
                 tray_builder = tray_builder.icon(icon.clone());
             }

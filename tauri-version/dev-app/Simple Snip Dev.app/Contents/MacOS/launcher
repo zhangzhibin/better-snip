@@ -4,7 +4,7 @@
 ROOT="$(cd "$(dirname "$0")/../../../../" && pwd)"
 BIN="$ROOT/src-tauri/target/debug/mac-screenshot"
 if [[ ! -x "$BIN" ]]; then
-  osascript -e "display alert \"Mac Screenshot Dev\" message \"请先执行 npm run dev 或 cargo build，生成 $BIN\""
+  osascript -e "display alert \"Simple Snip\" message \"请先执行 npm run dev 或 cargo build，生成 $BIN\""
   exit 1
 fi
 cd "$ROOT" && exec "$BIN" "$@"

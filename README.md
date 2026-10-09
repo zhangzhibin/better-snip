@@ -1,4 +1,4 @@
-# Mac Screenshot
+# Simple Snip
 
 极简 macOS 截图工具：全局快捷键或菜单栏调起 → 拖选区域或点选窗口 → 标注 → 剪贴板或文件。
 
