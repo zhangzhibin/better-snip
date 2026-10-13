@@ -4,11 +4,13 @@ import Cocoa
 final class PreferencesWindow: NSWindow, NSWindowDelegate {
     var onSuspendShortcut: ((Bool) -> Void)?
     var onShortcutChanged: (() -> Void)?
+    var onSkipPreviewChanged: (() -> Void)?
     var onClose: (() -> Void)?
     private var licensesWindow: NSWindow?
 
     private let recorder = ShortcutRecorder()
     private let destinationPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let skipPreviewCheckbox = NSButton(checkboxWithTitle: "Skip", target: nil, action: nil)
     private let formatPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let qualitySlider = NSSlider(value: 90, minValue: 1, maxValue: 100, target: nil, action: nil)
     private let qualityLabel = NSTextField(labelWithString: "90%")
@@ -18,7 +20,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 416),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -29,11 +31,12 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
         let shortcutLabel = NSTextField(labelWithString: "Shortcut")
         let destinationLabel = NSTextField(labelWithString: "Save to")
+        let previewLabel = NSTextField(labelWithString: "Preview")
         let formatLabel = NSTextField(labelWithString: "Format")
         let qualityTitle = NSTextField(labelWithString: "Quality")
         let folderLabel = NSTextField(labelWithString: "Folder")
         let screenRecordingTitle = NSTextField(labelWithString: "Screen Recording")
-        for label in [shortcutLabel, destinationLabel, formatLabel, qualityTitle, folderLabel, screenRecordingTitle] {
+        for label in [shortcutLabel, destinationLabel, previewLabel, formatLabel, qualityTitle, folderLabel, screenRecordingTitle] {
             label.alignment = .right
             label.font = .systemFont(ofSize: 13)
         }
@@ -64,6 +67,11 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         case .file: destinationPopup.selectItem(at: 1)
         case .both: destinationPopup.selectItem(at: 2)
         }
+
+        skipPreviewCheckbox.state = AppPreferences.skipPreview ? .on : .off
+        skipPreviewCheckbox.target = self
+        skipPreviewCheckbox.action = #selector(skipPreviewChanged(_:))
+        skipPreviewCheckbox.toolTip = "Save immediately, the same as confirming in the preview"
 
         formatPopup.addItems(withTitles: ["PNG", "Lossless PNG", "JPEG", "WebP"])
         formatPopup.target = self
@@ -115,7 +123,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         screenRecordingRow.alignment = .centerY
         updateScreenRecordingControls()
 
-        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
+        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. Skip preview saves immediately. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
@@ -131,6 +139,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         let grid = NSGridView(views: [
             [shortcutLabel, recorder],
             [destinationLabel, destinationPopup],
+            [previewLabel, skipPreviewCheckbox],
             [formatLabel, formatPopup],
             [qualityTitle, qualityRow],
             [folderLabel, folderRow],
@@ -175,6 +184,15 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         updateScreenRecordingControls()
     }
 
+    func refreshSkipPreview() {
+        skipPreviewCheckbox.state = AppPreferences.skipPreview ? .on : .off
+    }
+
+    @objc private func skipPreviewChanged(_ sender: NSButton) {
+        AppPreferences.skipPreview = sender.state == .on
+        onSkipPreviewChanged?()
+    }
+
     @objc private func destinationChanged(_ sender: NSPopUpButton) {
         let values: [SaveDestination] = [.clipboard, .file, .both]
         let index = sender.indexOfSelectedItem
@@ -216,6 +234,8 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         case .file: destinationPopup.selectItem(at: 1)
         case .both: destinationPopup.selectItem(at: 2)
         }
+        skipPreviewCheckbox.state = AppPreferences.skipPreview ? .on : .off
+        onSkipPreviewChanged?()
         switch AppPreferences.imageFormat {
         case .png: formatPopup.selectItem(at: 0)
         case .losslessPng: formatPopup.selectItem(at: 1)

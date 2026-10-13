@@ -7,7 +7,8 @@
 - **SKU**：simplesnip
 - **版权**：2026 Zhibin Zhang
 - **价格**：免费（价格等级 0）
-- **隐私**：不收集数据。仍需填写隐私政策网址和技术支持网址。
+- **隐私**：不收集数据。页面在 `docs/privacy.md`，联系邮箱 `contact@cloudcreate.ai`。
+- **技术支持**：`docs/support.md`，联系邮箱 `contact@cloudcreate.ai`。
 
 ## 英语（美国）
 
@@ -40,22 +41,43 @@ Features:
 - Save to the clipboard, a file, or both
 - PNG, Lossless PNG, JPEG, and WebP
 - Press Esc or Cancel to discard the screenshot
+- Skip Preview, from the menu bar or Preferences, saves immediately
 
 Screen Recording permission is required to capture the screen.
 
 ### 此版本的新增内容
 
-Initial release.
+Skip Preview saves a screenshot immediately, the same as confirming in the preview. Turn it on from the menu bar or Preferences.
 
 ### 审核备注
 
-Simple Snip is a menu bar app and does not show a Dock icon.
+粘贴到 App Review Information 的 Notes，并在 Resolution Center 用同样的文字回复。屏幕录像需要另附。
 
-1. Launch the app. After a short splash, use the camera icon in the menu bar.
-2. Screen Recording is required. If Preferences shows Not granted, click Grant Access, allow it in System Settings, then quit and reopen the app.
-3. Press Command-Option-C, or choose Capture. Drag a region, or hover a window and click.
-4. Draw a mark in the preview, then click Save. The default destination is the clipboard. Esc or Cancel discards the image.
-5. The app does not use the network and does not collect data.
+Thank you for the review. Simple Snip is ready for review. Answers to the requested items:
+
+1. Screen recording
+A screen recording captured on a physical Mac is attached. It starts from launch and shows the normal flow: splash, menu bar, capture, annotation, and save. The app has no account registration, login, or account deletion. It has no shared user-generated content, and no paid features.
+
+2. Purpose and audience
+Simple Snip is a minimal screenshot utility for people who need to capture a region, a window, or a full display and mark it up. It is aimed at programmers, designers, and anyone who works with more than one display. It solves the need for a native Apple silicon screenshot tool that does not require a network connection and does not add extra features beyond capture and annotation.
+
+3. How to access the main features
+No login or sample file is required.
+
+- Launch Simple Snip. It is a menu bar app and does not show a Dock icon. A short splash appears, then use the camera icon in the menu bar.
+- Screen Recording permission is required. Open Preferences from the menu. If the status is Not granted, click Grant Access, allow Simple Snip in System Settings, then quit and reopen the app.
+- Press Command-Option-C, or choose Capture. Drag a region, or hover a window and click. Move the pointer to choose among displays.
+- Choose Capture Full Screen to capture one whole display.
+- In the preview, use the arrow, rectangle, oval, line, pen, text, mosaic, or crop tools. Click Save to copy the image to the clipboard, save a file, or both, according to Preferences. Press Esc or click Cancel to discard it.
+
+4. External services
+None. The app does not connect to the network. It does not use a data provider, authentication service, payment processor, or AI service. Screenshot encoding is done on device.
+
+5. Regional differences
+The app functions the same in every region. The interface is English. There is no region-specific content.
+
+6. Regulated industry and third-party material
+The app is not in a regulated industry and does not include protected third-party material. It is an independent screenshot tool. It is not affiliated with any other screenshot product.
 
 ## 简体中文（稍后添加）
 
@@ -84,5 +106,6 @@ Simple Snip 只做截图。它为 Apple 芯片（M 系列）原生开发，在 M
 - 保存到剪贴板、文件，或两者同时保存
 - 文件格式支持 PNG、无损 PNG、JPEG 和 WebP
 - 按 Esc 或 Cancel 丢弃本次截图
+- 菜单栏或设置里打开 Skip Preview 后，截图会直接保存
 
 截取屏幕内容需要「屏幕录制」权限。

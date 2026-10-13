@@ -3,6 +3,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var captureItem: NSMenuItem!
+    private var skipPreviewItem: NSMenuItem!
     private var pickerWindows: [ScreenPickerWindow] = []
     private var eventMonitor: Any?
     private var editorWindow: AnnotationEditorWindow?
@@ -40,6 +41,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fullItem.target = self
         menu.addItem(fullItem)
 
+        skipPreviewItem = NSMenuItem(title: "Skip Preview", action: #selector(toggleSkipPreview), keyEquivalent: "")
+        skipPreviewItem.target = self
+        menu.addItem(skipPreviewItem)
+        updateSkipPreviewMenu()
+
         menu.addItem(.separator())
 
         let aboutItem = NSMenuItem(title: "About Simple Snip", action: #selector(showAbout), keyEquivalent: "")
@@ -57,6 +63,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
+        menu.delegate = self
         statusItem.menu = menu
 
         aboutWindow = AboutWindow()
@@ -82,7 +89,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let session = CaptureSession()
         session.onCapture = { [weak self] image, screen, anchor in
             self?.captureSession = nil
-            self?.openEditor(image: image, on: screen, anchor: anchor)
+            self?.deliver(image: image, on: screen, anchor: anchor)
         }
         session.onRegion = { [weak self] screen, rect in
             self?.captureSession = nil
@@ -106,7 +113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let displayID = ScreenCapture.displayID(for: screen)
             guard let full = ScreenCapture.captureFullImage(displayID: displayID),
                   let cropped = ScreenCapture.cropImage(full, rect: rect, scale: screen.backingScaleFactor) else { return }
-            self?.openEditor(image: cropped, on: screen, anchor: anchor)
+            self?.deliver(image: cropped, on: screen, anchor: anchor)
         }
     }
 
@@ -116,7 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let image = WindowPicker.captureWindow(windowID: info.windowID) else { return }
-            self?.openEditor(image: image, on: screen, anchor: appKit)
+            self?.deliver(image: image, on: screen, anchor: appKit)
         }
     }
 
@@ -155,7 +162,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         closeAllPickers()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let fullImage = ScreenCapture.captureFullImage(displayID: displayID) else { return }
-            self?.openEditor(image: fullImage, on: screen, anchor: screen.visibleFrame)
+            self?.deliver(image: fullImage, on: screen, anchor: screen.visibleFrame)
         }
     }
 
@@ -172,6 +179,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - 标记编辑器
+
+    /// 跳过预览时直接保存；否则打开标注窗口。
+    private func deliver(image: CGImage, on screen: NSScreen, anchor: NSRect?) {
+        if AppPreferences.skipPreview {
+            export(image, on: screen)
+        } else {
+            openEditor(image: image, on: screen, anchor: anchor)
+        }
+    }
 
     private func openEditor(image: CGImage, on screen: NSScreen, anchor: NSRect?) {
         let editor = AnnotationEditorWindow(image: image, screen: screen, anchor: anchor)
@@ -221,6 +237,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.onShortcutChanged = { [weak self] in
                 self?.updateCaptureMenuShortcut()
             }
+            window.onSkipPreviewChanged = { [weak self] in
+                self?.updateSkipPreviewMenu()
+            }
             window.onClose = { [weak self] in
                 self?.preferencesShown = false
                 self?.updateActivationPolicy()
@@ -243,6 +262,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateCaptureMenuShortcut()
     }
 
+    @objc private func toggleSkipPreview() {
+        AppPreferences.skipPreview.toggle()
+        updateSkipPreviewMenu()
+        preferencesWindow?.refreshSkipPreview()
+    }
+
+    private func updateSkipPreviewMenu() {
+        skipPreviewItem?.state = AppPreferences.skipPreview ? .on : .off
+    }
+
     private func updateCaptureMenuShortcut() {
         guard let captureItem else { return }
         if shortcutSuspended || !AppPreferences.isHotkeyEnabled {
@@ -261,5 +290,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        updateSkipPreviewMenu()
     }
 }

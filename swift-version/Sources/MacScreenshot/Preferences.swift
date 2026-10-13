@@ -43,6 +43,7 @@ enum AppPreferences {
     private static let directoryKey = "saveDirectory"
     private static let bookmarkKey = "saveDirectoryBookmark"
     private static let destinationKey = "saveDestination"
+    private static let skipPreviewKey = "skipPreview"
     private static let imageFormatKey = "imageFormat"
     private static let imageQualityKey = "imageQuality"
 
@@ -149,6 +150,12 @@ enum AppPreferences {
         set { UserDefaults.standard.set(min(100, max(1, newValue)), forKey: imageQualityKey) }
     }
 
+    /// 打开后截图不进入标注预览，直接按保存去向写出。默认关闭。
+    static var skipPreview: Bool {
+        get { UserDefaults.standard.bool(forKey: skipPreviewKey) }
+        set { UserDefaults.standard.set(newValue, forKey: skipPreviewKey) }
+    }
+
     /// 未设置过时默认开启。在快捷键栏按 Delete 后关闭，不再响应全局热键。
     static var isHotkeyEnabled: Bool {
         get {
@@ -165,7 +172,7 @@ enum AppPreferences {
     /// 快捷键、保存去向、格式、质量和目录都回到初始值。
     static func restoreDefaults() {
         let defaults = UserDefaults.standard
-        for key in [keyCodeKey, modifiersKey, characterKey, hotkeyEnabledKey, directoryKey, bookmarkKey, destinationKey, imageFormatKey, imageQualityKey] {
+        for key in [keyCodeKey, modifiersKey, characterKey, hotkeyEnabledKey, directoryKey, bookmarkKey, destinationKey, skipPreviewKey, imageFormatKey, imageQualityKey] {
             defaults.removeObject(forKey: key)
         }
     }

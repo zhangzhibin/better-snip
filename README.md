@@ -2,7 +2,7 @@
 
 A minimal macOS screenshot app. It runs natively on Apple silicon, does not need a network connection, and only takes screenshots.
 
-Press ⌘⌥C, or open it from the menu bar. Drag a region or click a window, annotate, then save to the clipboard, a file, or both.
+Press ⌘⌥C, or open it from the menu bar. Drag a region or click a window, annotate, then save to the clipboard, a file, or both. Turn on Skip Preview to save immediately.
 
 ![Annotated preview / 带标注的预览](docs/screenshot/app-store-preview.png)
 
@@ -30,6 +30,8 @@ cd swift-version
 
 - `docs/spec.md` — product and technical spec
 - `docs/app-store.md` — App Store listing copy
+- `docs/support.md` — support
+- `docs/privacy.md` — privacy policy
 - `docs/region-capture-coordinates.md` — macOS capture coordinates
 
 `tauri-version/` is an archived Tauri prototype and is not the shipping app.
@@ -38,7 +40,7 @@ cd swift-version
 
 极简 macOS 截图工具。为 Apple 芯片原生开发，不需要联网，只做截图。
 
-按 ⌘⌥C，或从菜单栏打开。拖选区域或单击窗口，标注后保存到剪贴板、文件，或两者都保存。
+按 ⌘⌥C，或从菜单栏打开。拖选区域或单击窗口，标注后保存到剪贴板、文件，或两者都保存。打开 Skip Preview 后会直接保存。
 
 - **平台**：macOS 12+
 - **Bundle ID**：`com.cloudcr.simplescreenshot`
@@ -60,6 +62,8 @@ cd swift-version
 
 - `docs/spec.md` — 产品与技术规格
 - `docs/app-store.md` — App Store 商店文案
+- `docs/support.md` — 技术支持
+- `docs/privacy.md` — 隐私政策
 - `docs/region-capture-coordinates.md` — macOS 截图坐标说明
 
 `tauri-version/` 是已归档的 Tauri 原型，不是正在发布的应用。
