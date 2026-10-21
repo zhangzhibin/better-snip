@@ -212,7 +212,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ok = ScreenCapture.writeToClipboard(image)
         }
         if destination == .file || destination == .both {
-            let saved = AppPreferences.withSaveDirectory { ScreenCapture.saveImage(image, to: $0) }
+            if AppPreferences.saveDirectory == nil {
+                _ = chooseSaveDirectory()
+            }
+            let saved = AppPreferences.withSaveDirectory { ScreenCapture.saveImage(image, to: $0) } ?? nil
             if saved != nil {
                 ok = true
             } else if destination == .file {
@@ -220,6 +223,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if ok { FlashWindow.show(on: screen) }
+    }
+
+    /// 第一次保存到文件时让用户选目录。取消则返回 nil，由调用方改存剪贴板。
+    private func chooseSaveDirectory() -> URL? {
+        let wasAccessory = NSApp.activationPolicy() == .accessory
+        if wasAccessory {
+            NSApp.setActivationPolicy(.regular)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        defer {
+            if wasAccessory, editorWindow == nil, !preferencesShown {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Choose a folder for screenshots"
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        AppPreferences.rememberSaveDirectory(url)
+        preferencesWindow?.refreshFolder()
+        return url
     }
 
     // MARK: - 偏好设置

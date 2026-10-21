@@ -81,15 +81,19 @@ enum AppPreferences {
         set { UserDefaults.standard.set(newValue.lowercased(), forKey: characterKey) }
     }
 
-    static var saveDirectory: URL {
+    /// 用户通过系统对话框选过的目录。未选过时为 nil，不预置「图片」。
+    static var saveDirectory: URL? {
         get {
-            if let path = UserDefaults.standard.string(forKey: directoryKey), !path.isEmpty {
-                return URL(fileURLWithPath: path, isDirectory: true)
-            }
-            return FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSHomeDirectory() + "/Pictures", isDirectory: true)
+            guard let path = UserDefaults.standard.string(forKey: directoryKey), !path.isEmpty else { return nil }
+            return URL(fileURLWithPath: path, isDirectory: true)
         }
-        set { UserDefaults.standard.set(newValue.path, forKey: directoryKey) }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue.path, forKey: directoryKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: directoryKey)
+            }
+        }
     }
 
     /// 记住用户选过的目录，并尽量存成安全作用域书签，供沙盒版下次写入。
@@ -98,10 +102,11 @@ enum AppPreferences {
         storeBookmark(for: url)
     }
 
-    /// 沙盒里用书签访问目录；没有书签时退回路径（开发版未开沙盒，或目录在「图片」权限内）。
-    static func withSaveDirectory<T>(_ body: (URL) -> T) -> T {
+    /// 沙盒里用书签访问用户选过的目录，并在 body 执行期间保持访问。没有书签时退回该路径（开发版未开沙盒）。未选过目录时不调用 body。
+    static func withSaveDirectory<T>(_ body: (URL) -> T) -> T? {
+        guard let chosen = saveDirectory else { return nil }
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
-            return body(saveDirectory)
+            return body(chosen)
         }
         var stale = false
         guard let url = try? URL(
@@ -110,12 +115,12 @@ enum AppPreferences {
             relativeTo: nil,
             bookmarkDataIsStale: &stale
         ) else {
-            return body(saveDirectory)
+            return body(chosen)
         }
         let started = url.startAccessingSecurityScopedResource()
         defer { if started { url.stopAccessingSecurityScopedResource() } }
         if stale { storeBookmark(for: url) }
-        if url.path != UserDefaults.standard.string(forKey: directoryKey) {
+        if url.path != chosen.path {
             UserDefaults.standard.set(url.path, forKey: directoryKey)
         }
         return body(url)

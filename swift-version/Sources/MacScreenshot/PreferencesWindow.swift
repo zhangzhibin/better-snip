@@ -20,7 +20,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 416),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 448),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -123,7 +123,7 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         screenRecordingRow.alignment = .centerY
         updateScreenRecordingControls()
 
-        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. Skip preview saves immediately. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
+        let hint = NSTextField(wrappingLabelWithString: "Hold Option to swap Clipboard and File. Skip preview saves immediately. Choose a folder the first time a file is saved. PNG merges similar colors automatically. Quality applies to JPEG and WebP. Clipboard stays lossless. Delete in the shortcut field turns the shortcut off.")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
 
@@ -186,6 +186,10 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
 
     func refreshSkipPreview() {
         skipPreviewCheckbox.state = AppPreferences.skipPreview ? .on : .off
+    }
+
+    func refreshFolder() {
+        updatePathLabel()
     }
 
     @objc private func skipPreviewChanged(_ sender: NSButton) {
@@ -267,9 +271,13 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
         screenRecordingButton.isHidden = granted
     }
 
-    /// 在访达中打开保存目录，方便直接找到截图。目录还不存在时打开上一级。
+    /// 在访达中打开保存目录。还没选过目录时改为让用户选择。
     @objc private func revealFolder() {
-        AppPreferences.withSaveDirectory { url in
+        guard AppPreferences.saveDirectory != nil else {
+            chooseFolder()
+            return
+        }
+        _ = AppPreferences.withSaveDirectory { url in
             let target = FileManager.default.fileExists(atPath: url.path) ? url : url.deletingLastPathComponent()
             NSWorkspace.shared.open(target)
         }
@@ -333,7 +341,11 @@ final class PreferencesWindow: NSWindow, NSWindowDelegate {
     }
 
     private func updatePathLabel() {
-        pathLabel.stringValue = (AppPreferences.saveDirectory.path as NSString).abbreviatingWithTildeInPath
+        guard let directory = AppPreferences.saveDirectory else {
+            pathLabel.stringValue = "Not chosen"
+            return
+        }
+        pathLabel.stringValue = (directory.path as NSString).abbreviatingWithTildeInPath
     }
 }
 

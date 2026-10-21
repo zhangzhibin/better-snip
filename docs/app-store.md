@@ -47,11 +47,15 @@ Screen Recording permission is required to capture the screen.
 
 ### 此版本的新增内容
 
-Skip Preview saves a screenshot immediately, the same as confirming in the preview. Turn it on from the menu bar or Preferences.
+Screenshots are no longer saved to a preset Pictures folder. The first time you save a file, choose a folder. Canceling that choice copies the image to the clipboard instead.
 
 ### 审核备注
 
-粘贴到 App Review Information 的 Notes，并在 Resolution Center 用同样的文字回复。屏幕录像需要另附。
+粘贴到 Resolution Center，回复 Guideline 2.4.5(i)。重新提交 1.0.2（build 3）二进制。
+
+Thank you for the additional review. Simple Snip 1.0.2 removes the entitlement com.apple.security.assets.pictures.read-write. The app no longer reads or writes ~/Pictures unless the user selects that folder.
+
+The default save destination is the clipboard. A file is saved only after the user chooses a folder with the standard open panel, either in Preferences or the first time a screenshot is saved to a file. That choice is kept with a security-scoped bookmark. If the user cancels the panel, the image is copied to the clipboard instead. Restore Defaults clears the chosen folder and does not put Pictures back.
 
 Thank you for the review. Simple Snip is ready for review. Answers to the requested items:
 
